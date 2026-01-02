@@ -82,7 +82,7 @@ Physics-level behavior (loss/noise/attack) translates into operational metrics (
 
 5. Gisin, N., Ribordy, G., Tittel, W., & Zbinden, H. (2002). **Quantum cryptography.** *Reviews of Modern Physics*, *74*(1), 145–195. https://doi.org/10.1103/RevModPhys.74.145
 
-6. Altman, C., Wiliams, C., Ursin, R., Villoresi, P., Sharma, V. **Astronaut Development and Deployment of a Secure Space Communications Network,** NASA NIAC/OCT; DARPA QUINESS (Macroscopic Quantum Communications). [Drive link](https://drive.google.com/file/d/0B99KWApna6GoX3JzZGMzbzNrMjg/view?resourcekey=0-b1lf7VUq8QmpRriVN5N2sw)
+6. Altman, C., Wiliams, C., Ursin, R., Villoresi, P., Sharma, V. **Astronaut Development and Deployment of a Secure Space Communications Network,** NASA NIAC/OCT; DARPA QUINESS (Macroscopic Quantum Communications). [PDF](https://drive.google.com/file/d/0B99KWApna6GoX3JzZGMzbzNrMjg/view?resourcekey=0-b1lf7VUq8QmpRriVN5N2sw)
 
 ## Citations
 
