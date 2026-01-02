@@ -15,7 +15,7 @@
 
 ## Problem / Phenomenon Investigated
 
-Satellite and fibre Quantum Key Distribution (QKD) systems live or die on a simple fact: bits can still flow while secrecy collapses. This repo is a tiny, reproducible “security curve” lab: simulate BB84 under realistic loss/noise and a textbook intercept–resend attacker, then compute QBER and the asymptotic secret-key fraction. It’s designed to produce plots you can discuss with engineering leadership in minutes.
+Satellite and fibre Quantum Key Distribution (QKD) systems live or die on a simple fact: bits can still flow while secrecy collapses. This experiment creates a reproducible “security curve” lab: simulate BB84 under realistic loss/noise and a textbook intercept–resend attacker, then compute QBER and the asymptotic secret-key fraction.
 
 ## Hypothesis or Construct
 
@@ -28,7 +28,7 @@ If we model (i) channel loss in dB, (ii) intrinsic measurement noise, and (iii) 
 - What is being experimentally compared:
         - no attack vs intercept–resend
         - sweeps over loss_db and intrinsic flip_prob
-        - optional “toy satellite pass” mapping elevation angle → loss_db
+        - optional “satellite pass” mapping elevation angle → loss_db
 
 ## Implementation
 
@@ -65,7 +65,7 @@ The curves show an engineering-facing “security budget.” Loss reduces detect
 
 ## Why this matters
 
-Translates physics-level behavior (loss/noise/attack) into operational metrics (QBER, secret-key rate), imperative metrics in the construction of integrated satellite + fibre QKD networks.
+Physics-level behavior (loss/noise/attack) translates into operational metrics (QBER, secret-key rate), imperative metrics in the construction of integrated satellite + fibre QKD networks.
 
 ## Topics
 
