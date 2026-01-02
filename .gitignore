@@ -40,3 +40,6 @@ runs/
 
 # Generated reports
 reports/latest.json
+
+# Generated figures
+figures/*.png
