@@ -1,9 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "sat-qkd-security-curves"
 version = "0.1.0"
 description = "BB84 QKD simulation + satellite-style link loss model + security curves"
 requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "matplotlib",
+]
 
-[project.dependencies]
-numpy = "*"
-matplotlib = "*"
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+sat_qkd_lab = ["py.typed"]
+
+[project.optional-dependencies]
+dev = ["pytest"]

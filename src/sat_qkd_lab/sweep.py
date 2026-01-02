@@ -1,7 +1,11 @@
 from __future__ import annotations
-from typing import List, Dict, Any, Sequence
+from typing import List, Dict, Any, Sequence, Optional
+from concurrent.futures import ProcessPoolExecutor
+import numpy as np
 from .bb84 import simulate_bb84, Attack
 from .link_budget import SatLinkParams, total_channel_loss_db
+from .detector import DetectorParams, DEFAULT_DETECTOR
+
 
 def sweep_loss(
     loss_db_values: Sequence[float],
@@ -9,7 +13,32 @@ def sweep_loss(
     attack: Attack = "none",
     n_pulses: int = 200_000,
     seed: int = 0,
+    detector: Optional[DetectorParams] = None,
 ) -> List[Dict[str, Any]]:
+    """
+    Sweep over loss values and run BB84 simulation for each.
+
+    Parameters
+    ----------
+    loss_db_values : Sequence[float]
+        Channel loss values in dB.
+    flip_prob : float
+        Intrinsic bit-flip probability.
+    attack : Attack
+        Attack type ("none" or "intercept_resend").
+    n_pulses : int
+        Number of pulses per simulation.
+    seed : int
+        Base random seed (incremented for each loss value).
+    detector : DetectorParams, optional
+        Detector model parameters.
+
+    Returns
+    -------
+    List[Dict[str, Any]]
+        List of result dictionaries, one per loss value.
+    """
+    det = detector if detector is not None else DEFAULT_DETECTOR
     out: List[Dict[str, Any]] = []
     for i, loss_db in enumerate(loss_db_values):
         s = simulate_bb84(
@@ -18,6 +47,7 @@ def sweep_loss(
             flip_prob=float(flip_prob),
             attack=attack,
             seed=seed + i,
+            detector=det,
         )
         out.append({
             "loss_db": float(loss_db),
@@ -28,10 +58,12 @@ def sweep_loss(
             "n_sifted": s.n_sifted,
             "qber": s.qber,
             "secret_fraction": s.secret_fraction,
+            "key_rate_per_pulse": s.key_rate_per_pulse,
             "n_secret_est": s.n_secret_est,
             "aborted": bool(s.aborted),
         })
     return out
+
 
 def sweep_satellite_pass(
     elevation_deg_values: Sequence[float],
@@ -40,8 +72,16 @@ def sweep_satellite_pass(
     n_pulses: int = 200_000,
     seed: int = 0,
     link_params: SatLinkParams | None = None,
+    detector: Optional[DetectorParams] = None,
 ) -> List[Dict[str, Any]]:
+    """
+    Sweep over satellite elevation angles and run BB84 simulation for each.
+
+    Maps elevation angles to loss via the satellite link budget model,
+    then runs BB84 simulations.
+    """
     p = link_params or SatLinkParams()
+    det = detector if detector is not None else DEFAULT_DETECTOR
     out: List[Dict[str, Any]] = []
     for i, el in enumerate(elevation_deg_values):
         loss_db = total_channel_loss_db(float(el), p)
@@ -51,6 +91,7 @@ def sweep_satellite_pass(
             flip_prob=float(flip_prob),
             attack=attack,
             seed=seed + i,
+            detector=det,
         )
         out.append({
             "elevation_deg": float(el),
@@ -59,8 +100,242 @@ def sweep_satellite_pass(
             "attack": str(attack),
             "qber": s.qber,
             "secret_fraction": s.secret_fraction,
+            "key_rate_per_pulse": s.key_rate_per_pulse,
             "n_secret_est": s.n_secret_est,
             "n_sifted": s.n_sifted,
             "aborted": bool(s.aborted),
         })
     return out
+
+
+# --- Monte Carlo sweep with confidence intervals ---
+
+def _run_single_trial(args: tuple) -> Dict[str, Any]:
+    """Worker function for parallel sweep trials."""
+    loss_db, flip_prob, attack, n_pulses, seed, det_eta, det_p_bg = args
+    det = DetectorParams(eta=det_eta, p_bg=det_p_bg)
+    s = simulate_bb84(
+        n_pulses=n_pulses,
+        loss_db=loss_db,
+        flip_prob=flip_prob,
+        attack=attack,
+        seed=seed,
+        detector=det,
+    )
+    return {
+        "qber": s.qber,
+        "secret_fraction": s.secret_fraction,
+        "key_rate_per_pulse": s.key_rate_per_pulse,
+        "n_sifted": s.n_sifted,
+        "n_sent": s.n_sent,
+        "n_secret_est": s.n_secret_est,
+        "aborted": s.aborted,
+    }
+
+
+def sweep_loss_with_ci(
+    loss_db_values: Sequence[float],
+    flip_prob: float = 0.0,
+    attack: Attack = "none",
+    n_pulses: int = 200_000,
+    seed: int = 0,
+    n_trials: int = 10,
+    detector: Optional[DetectorParams] = None,
+    n_workers: int = 1,
+) -> List[Dict[str, Any]]:
+    """
+    Sweep over loss values with Monte Carlo confidence intervals.
+
+    Runs multiple independent trials for each loss value and computes
+    mean, standard deviation, and 95% confidence intervals for key metrics.
+
+    Parameters
+    ----------
+    loss_db_values : Sequence[float]
+        Channel loss values in dB.
+    flip_prob : float
+        Intrinsic bit-flip probability.
+    attack : Attack
+        Attack type ("none" or "intercept_resend").
+    n_pulses : int
+        Number of pulses per simulation.
+    seed : int
+        Base random seed.
+    n_trials : int
+        Number of independent trials per loss value.
+    detector : DetectorParams, optional
+        Detector model parameters.
+    n_workers : int
+        Number of parallel workers (1 = sequential).
+
+    Returns
+    -------
+    List[Dict[str, Any]]
+        List of result dictionaries with mean, std, and CI bounds.
+
+    Notes
+    -----
+    Uses numpy.random.SeedSequence to generate independent RNG streams
+    for each (loss_index, trial) pair. This avoids RNG collisions when
+    sweeping over parameter grids with the same base seed.
+    """
+    det = detector if detector is not None else DEFAULT_DETECTOR
+    out: List[Dict[str, Any]] = []
+
+    # Create SeedSequence for proper RNG independence across grid points
+    n_points = len(loss_db_values)
+    total_streams = n_points * n_trials
+    ss = np.random.SeedSequence(seed)
+    child_seeds = ss.spawn(total_streams)
+
+    for i, loss_db in enumerate(loss_db_values):
+        # Prepare arguments for all trials at this loss value
+        # Use SeedSequence-derived seeds for independence
+        trial_args = [
+            (float(loss_db), float(flip_prob), attack, n_pulses,
+             int(child_seeds[i * n_trials + t].generate_state(1)[0]), det.eta, det.p_bg)
+            for t in range(n_trials)
+        ]
+
+        # Run trials (parallel or sequential)
+        if n_workers > 1:
+            with ProcessPoolExecutor(max_workers=n_workers) as executor:
+                trial_results = list(executor.map(_run_single_trial, trial_args))
+        else:
+            trial_results = [_run_single_trial(a) for a in trial_args]
+
+        # Compute statistics
+        qbers = np.array([r["qber"] for r in trial_results])
+        sfs = np.array([r["secret_fraction"] for r in trial_results])
+        key_rates = np.array([r["key_rate_per_pulse"] for r in trial_results])
+        sifteds = np.array([r["n_sifted"] for r in trial_results])
+        secrets = np.array([r["n_secret_est"] for r in trial_results])
+        aborteds = np.array([r["aborted"] for r in trial_results])
+
+        # Handle NaN QBER values (from aborted runs)
+        qbers_valid = qbers[~np.isnan(qbers)]
+        n_valid = len(qbers_valid)
+
+        if n_valid > 0:
+            qber_mean = float(np.mean(qbers_valid))
+            qber_std = float(np.std(qbers_valid, ddof=1)) if n_valid > 1 else 0.0
+            qber_se = qber_std / np.sqrt(n_valid) if n_valid > 1 else 0.0
+            qber_ci_low_raw = qber_mean - 1.96 * qber_se
+            qber_ci_high_raw = qber_mean + 1.96 * qber_se
+            # Clamp QBER CI to physical bounds [0.0, 0.5]
+            qber_ci_low = max(0.0, min(0.5, qber_ci_low_raw))
+            qber_ci_high = max(0.0, min(0.5, qber_ci_high_raw))
+        else:
+            qber_mean = float("nan")
+            qber_std = float("nan")
+            qber_ci_low = float("nan")
+            qber_ci_high = float("nan")
+
+        # Secret fraction: mean over all trials (including aborted, which have sf=0)
+        sf_mean_all = float(np.mean(sfs))
+        sf_std = float(np.std(sfs, ddof=1)) if n_trials > 1 else 0.0
+        sf_se = sf_std / np.sqrt(n_trials) if n_trials > 1 else 0.0
+        sf_ci_low = sf_mean_all - 1.96 * sf_se
+        sf_ci_high = sf_mean_all + 1.96 * sf_se
+
+        # Secret fraction: mean over non-aborted trials only
+        nonaborted_mask = ~aborteds
+        sfs_nonaborted = sfs[nonaborted_mask]
+        if len(sfs_nonaborted) > 0:
+            sf_mean_nonaborted = float(np.mean(sfs_nonaborted))
+        else:
+            sf_mean_nonaborted = 0.0
+
+        abort_rate = float(np.mean(aborteds))
+        nonabort_rate = 1.0 - abort_rate
+
+        # Key rate statistics (key_rate_per_pulse is 0 for aborted trials)
+        kr_mean = float(np.mean(key_rates))
+        kr_std = float(np.std(key_rates, ddof=1)) if n_trials > 1 else 0.0
+        kr_se = kr_std / np.sqrt(n_trials) if n_trials > 1 else 0.0
+        kr_ci_low_raw = kr_mean - 1.96 * kr_se
+        kr_ci_high_raw = kr_mean + 1.96 * kr_se
+        # Clamp key rate CI to non-negative (key rate cannot be negative)
+        kr_ci_low = max(0.0, kr_ci_low_raw)
+        kr_ci_high = max(0.0, kr_ci_high_raw)
+
+        out.append({
+            "loss_db": float(loss_db),
+            "flip_prob": float(flip_prob),
+            "attack": str(attack),
+            "n_trials": n_trials,
+            # QBER statistics
+            "qber_mean": qber_mean,
+            "qber_std": qber_std,
+            "qber_ci_low": qber_ci_low,
+            "qber_ci_high": qber_ci_high,
+            "qber_n_valid": n_valid,
+            # Secret fraction statistics (all trials)
+            "secret_fraction_mean": sf_mean_all,  # backward compat
+            "secret_fraction_mean_all": sf_mean_all,
+            "secret_fraction_std": sf_std,
+            "secret_fraction_ci_low": max(0.0, min(1.0, sf_ci_low)),
+            "secret_fraction_ci_high": max(0.0, min(1.0, sf_ci_high)),
+            # Secret fraction (non-aborted trials only)
+            "secret_fraction_mean_nonaborted": sf_mean_nonaborted,
+            # Key rate per pulse statistics
+            "key_rate_per_pulse_mean": kr_mean,
+            "key_rate_per_pulse_std": kr_std,
+            "key_rate_per_pulse_ci_low": kr_ci_low,
+            "key_rate_per_pulse_ci_high": kr_ci_high,
+            # Other statistics
+            "n_sifted_mean": float(np.mean(sifteds)),
+            "n_secret_est_mean": float(np.mean(secrets)),
+            "abort_rate": abort_rate,
+            "nonabort_rate": nonabort_rate,
+        })
+
+    return out
+
+
+def compute_summary_stats(records: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Compute summary statistics across a sweep.
+
+    Parameters
+    ----------
+    records : List[Dict[str, Any]]
+        List of sweep result dictionaries.
+
+    Returns
+    -------
+    Dict[str, Any]
+        Summary statistics including min/max loss where key is extractable.
+    """
+    loss_vals = [r["loss_db"] for r in records]
+
+    # Find key metric field (handle both regular and CI sweeps)
+    # For CI sweeps, use secret_fraction_mean_nonaborted to define positive key region
+    if "secret_fraction_mean_nonaborted" in records[0]:
+        sf_key = "secret_fraction_mean_nonaborted"
+    elif "secret_fraction_mean" in records[0]:
+        sf_key = "secret_fraction_mean"
+    else:
+        sf_key = "secret_fraction"
+
+    sf_vals = [r[sf_key] for r in records]
+
+    # Find loss range where secret fraction > 0
+    positive_sf = [(l, sf) for l, sf in zip(loss_vals, sf_vals) if sf > 0]
+
+    if positive_sf:
+        max_loss_positive = max(l for l, _ in positive_sf)
+        min_loss_positive = min(l for l, _ in positive_sf)
+    else:
+        max_loss_positive = None
+        min_loss_positive = None
+
+    return {
+        "loss_min": min(loss_vals),
+        "loss_max": max(loss_vals),
+        "loss_range_positive_key": {
+            "min": min_loss_positive,
+            "max": max_loss_positive,
+        },
+        "n_points": len(records),
+    }

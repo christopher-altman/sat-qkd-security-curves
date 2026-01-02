@@ -2,6 +2,7 @@ from __future__ import annotations
 import numpy as np
 from typing import Literal, Optional, Dict, Any
 from .helpers import h2, RunSummary
+from .detector import DetectorParams, DEFAULT_DETECTOR
 
 Attack = Literal["none", "intercept_resend"]
 
@@ -14,10 +15,12 @@ def simulate_bb84(
     qber_abort_threshold: float = 0.11,
     ec_efficiency: float = 1.16,
     seed: Optional[int] = 0,
+    detector: Optional[DetectorParams] = None,
 ) -> RunSummary:
     """
     BB84 Monte Carlo simulator with:
       - channel loss: transmittance = 10^(-loss_db/10)
+      - detector model: detection efficiency (eta) and background clicks (p_bg)
       - intrinsic bit-flip noise after measurement (flip_prob)
       - optional intercept-resend attack (Eve measures in random basis and resends)
 
@@ -27,17 +30,44 @@ def simulate_bb84(
       secret_fraction ≈ max(0, 1 - f_ec*h2(Q) - h2(Q))
 
     This is not a full finite-key proof; it's a clean security-curve instrument.
+
+    Detection Model
+    ---------------
+    For each pulse:
+      - Signal click probability: p_sig = eta * transmittance
+      - Background click probability: p_bg (independent of signal)
+      - A click occurs if sig_click OR bg_click
+      - If only bg_click (no sig_click): Bob's bit is uniform random
+      - If sig_click (with or without bg_click): signal dominates (Bob gets signal bit)
+
+    This models the key operational effect: at high loss, background clicks
+    dominate and QBER approaches 0.5.
+
+    Parameters
+    ----------
+    detector : DetectorParams, optional
+        Detector model parameters. If None, uses DEFAULT_DETECTOR (eta=0.2, p_bg=1e-4).
     """
     rng = np.random.default_rng(seed)
+    det = detector if detector is not None else DEFAULT_DETECTOR
 
     # Alice bits and bases: 0=Z, 1=X
     a_bits = rng.integers(0, 2, size=n_pulses, dtype=np.int8)
     a_basis = rng.integers(0, 2, size=n_pulses, dtype=np.int8)
 
-    # Loss: Bob gets a detection event with probability trans
+    # Channel transmittance and detection model
     trans = 10 ** (-loss_db / 10.0)
-    received = rng.random(n_pulses) < trans
-    idx = np.where(received)[0]
+    p_sig_click = det.eta * trans
+
+    # Determine which pulses produce clicks
+    sig_click = rng.random(n_pulses) < p_sig_click
+    bg_click = rng.random(n_pulses) < det.p_bg
+    click = sig_click | bg_click
+
+    # Track which clicks are background-only (will be random bits)
+    bg_only = bg_click & (~sig_click)
+
+    idx = np.where(click)[0]
 
     if idx.size == 0:
         return RunSummary(
@@ -48,10 +78,13 @@ def simulate_bb84(
             secret_fraction=0.0,
             n_secret_est=0,
             aborted=True,
-            meta=_meta(loss_db, flip_prob, attack, sample_frac, qber_abort_threshold, ec_efficiency, seed),
+            meta=_meta(loss_db, flip_prob, attack, sample_frac, qber_abort_threshold, ec_efficiency, seed, det),
         )
 
-    # Eve intercept-resend
+    # For signal clicks, determine incoming bits (possibly through Eve)
+    # For background-only clicks, we'll assign random bits after sifting
+
+    # Eve intercept-resend (only affects signal path)
     if attack == "intercept_resend":
         e_basis = rng.integers(0, 2, size=idx.size, dtype=np.int8)
         e_bits = a_bits[idx].copy()
@@ -60,8 +93,8 @@ def simulate_bb84(
         incoming_bits = e_bits
         incoming_basis = e_basis
     else:
-        incoming_bits = a_bits[idx]
-        incoming_basis = a_basis[idx]
+        incoming_bits = a_bits[idx].copy()
+        incoming_basis = a_basis[idx].copy()
 
     # Bob chooses bases
     b_basis = rng.integers(0, 2, size=idx.size, dtype=np.int8)
@@ -70,6 +103,10 @@ def simulate_bb84(
     b_bits = incoming_bits.copy()
     mismatch_b = b_basis != incoming_basis
     b_bits[mismatch_b] = rng.integers(0, 2, size=np.sum(mismatch_b), dtype=np.int8)
+
+    # For background-only clicks, Bob's bit is uniform random (independent of Alice)
+    bg_only_idx = bg_only[idx]
+    b_bits[bg_only_idx] = rng.integers(0, 2, size=np.sum(bg_only_idx), dtype=np.int8)
 
     # Intrinsic noise
     if flip_prob > 0:
@@ -91,7 +128,7 @@ def simulate_bb84(
             secret_fraction=0.0,
             n_secret_est=0,
             aborted=True,
-            meta=_meta(loss_db, flip_prob, attack, sample_frac, qber_abort_threshold, ec_efficiency, seed),
+            meta=_meta(loss_db, flip_prob, attack, sample_frac, qber_abort_threshold, ec_efficiency, seed, det),
         )
 
     # Estimate QBER from a random sample
@@ -101,10 +138,15 @@ def simulate_bb84(
 
     aborted = qber > qber_abort_threshold
 
-    secret_fraction = max(0.0, 1.0 - ec_efficiency * h2(qber) - h2(qber))
-
-    n_raw_key = n_sift - n_sample
-    n_secret_est = int(np.floor(n_raw_key * secret_fraction)) if (not aborted) else 0
+    # Compute secret fraction only for non-aborted trials
+    # Aborted trials have secret_fraction = 0 (no key extractable)
+    if aborted:
+        secret_fraction = 0.0
+        n_secret_est = 0
+    else:
+        secret_fraction = max(0.0, 1.0 - ec_efficiency * h2(qber) - h2(qber))
+        n_raw_key = n_sift - n_sample
+        n_secret_est = int(np.floor(n_raw_key * secret_fraction))
 
     return RunSummary(
         n_sent=n_pulses,
@@ -114,10 +156,19 @@ def simulate_bb84(
         secret_fraction=secret_fraction,
         n_secret_est=n_secret_est,
         aborted=aborted,
-        meta=_meta(loss_db, flip_prob, attack, sample_frac, qber_abort_threshold, ec_efficiency, seed),
+        meta=_meta(loss_db, flip_prob, attack, sample_frac, qber_abort_threshold, ec_efficiency, seed, det),
     )
 
-def _meta(loss_db: float, flip_prob: float, attack: Attack, sample_frac: float, qber_abort_threshold: float, ec_efficiency: float, seed: Optional[int]) -> Dict[str, Any]:
+def _meta(
+    loss_db: float,
+    flip_prob: float,
+    attack: Attack,
+    sample_frac: float,
+    qber_abort_threshold: float,
+    ec_efficiency: float,
+    seed: Optional[int],
+    detector: DetectorParams,
+) -> Dict[str, Any]:
     return {
         "loss_db": float(loss_db),
         "flip_prob": float(flip_prob),
@@ -126,4 +177,6 @@ def _meta(loss_db: float, flip_prob: float, attack: Attack, sample_frac: float, 
         "qber_abort_threshold": float(qber_abort_threshold),
         "ec_efficiency": float(ec_efficiency),
         "seed": seed,
+        "eta": float(detector.eta),
+        "p_bg": float(detector.p_bg),
     }

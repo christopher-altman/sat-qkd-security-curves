@@ -31,18 +31,110 @@ If we model (i) channel loss in dB, (ii) intrinsic measurement noise, and (iii) 
 
 ## Implementation
 
-- Python package under /src/sat_qkd_lab
-- CLI:
-        - python -m sat_qkd_lab.run sweep --help
-- Requirements: pyproject.toml (numpy, matplotlib)
+- Python package under `/src/sat_qkd_lab`
+- CLI: `python -m sat_qkd_lab.run <command> --help`
+- Requirements: `pyproject.toml` (numpy, matplotlib)
+
+### Features
+
+**Detector/Background Model** — The simulation includes a realistic detector model with:
+- `eta`: Detection efficiency (default 0.2)
+- `p_bg`: Background/dark click probability per pulse (default 1e-4)
+
+At high channel loss, background clicks dominate over signal clicks, causing QBER to approach 0.5. This models the operationally critical effect where the signal-to-noise ratio degrades.
+
+**Monte Carlo Confidence Intervals** — Run multiple trials per loss value to obtain uncertainty estimates:
+- `--trials N`: Number of independent trials (enables CI when N > 1)
+- `--workers N`: Parallel workers for faster execution
+- `--seed N`: Base random seed for reproducibility
+
+Outputs include mean, standard deviation, and 95% CI bounds for QBER, secret fraction, and key rate per pulse. CI bounds are clamped to physical ranges (e.g., QBER ≤ 0.5, key rate ≥ 0).
+
+**Key Rate Per Pulse** — The simulation now outputs `key_rate_per_pulse`, which properly accounts for the BB84 sifting factor (~1/2). This gives the asymptotic key rate normalized to sent pulses:
+```
+key_rate_per_pulse = (n_sifted / n_sent) × secret_fraction
+```
+
+**Decoy-State BB84** — The `decoy-sweep` command implements vacuum + weak decoy protocol:
+- Uses three intensities (signal, decoy, vacuum) to bound single-photon contributions
+- Computes asymptotic key rate using standard decoy-state bounds
+- Demonstrates PNS attack resilience (motivation for real satellite QKD)
+
+**Link Budget** — The `link_budget.py` module is an **Option A scenario generator** that maps elevation angles to loss values for demonstration. It is *not* a physically accurate optical link model. See `optical_link.py` for documentation of what a proper Option B model would require.
+
+**Input Validation** — CLI arguments are validated post-parse with clear error messages:
+- `validate_int(name, value, min_value, max_value)` — Integer bounds checking
+- `validate_float(name, value, min_value, max_value, allow_nan, allow_inf)` — Float bounds with NaN/inf control
+- `validate_seed(seed)` — Ensures seed is None or non-negative integer
+
+Invalid inputs raise `ValueError` with the parameter name and invalid value.
+
+**Abort Handling** — When QBER exceeds the abort threshold (default 11%), the protocol aborts and:
+- `secret_fraction` is set to 0.0 (no key extractable)
+- `n_secret_est` is set to 0
+- `key_rate_per_pulse` returns 0.0
+
+This ensures aborted trials contribute zero to aggregated statistics.
+
+### Simulator API
+
+The core simulation functions are:
+- `sat_qkd_lab.bb84.simulate_bb84()` — Single-photon BB84 Monte Carlo simulation
+- `sat_qkd_lab.decoy_bb84.simulate_decoy_bb84()` — Decoy-state BB84 with vacuum + weak decoy
+
+Both return structured results with QBER, secret fraction, and key rate metrics.
+
+### Example Commands
+
+```bash
+# Single-trial BB84 sweep (fast)
+python -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21
+
+# BB84 sweep with detector model and CI (10 trials per point)
+python -m sat_qkd_lab.run sweep --trials 10 --eta 0.2 --p-bg 1e-4
+
+# Decoy-state BB84 sweep
+python -m sat_qkd_lab.run decoy-sweep --loss-min 20 --loss-max 50 --steps 16
+```
 
 ## Results
 
 The model generates:
 
-- figures/key_rate_vs_loss.png
-- figures/qber_vs_loss.png
-- reports/latest.json (raw sweep metrics)
+- `figures/key_qber_vs_loss.png` — QBER vs channel loss
+- `figures/key_key_fraction_vs_loss.png` — Secret fraction vs channel loss
+- `figures/qber_vs_loss_ci.png` — QBER with 95% CI bands (when `--trials > 1`)
+- `figures/key_rate_vs_loss_ci.png` — Secret fraction with CI bands
+- `figures/decoy_key_rate_vs_loss.png` — Decoy-state key rate vs loss
+- `reports/latest.json` — Raw sweep metrics with schema version and timestamp
+
+### JSON Output Schema (v0.2)
+
+The output JSON includes these new fields for CI sweeps:
+
+```json
+{
+  "schema_version": "0.2",
+  "generated_utc": "2026-01-02T...",
+  "loss_sweep_ci": {
+    "no_attack": [{
+      "qber_mean": 0.025,
+      "qber_ci_low": 0.018,
+      "qber_ci_high": 0.032,
+      "secret_fraction_mean": 0.85,
+      "secret_fraction_ci_low": 0.80,
+      "secret_fraction_ci_high": 0.90,
+      "key_rate_per_pulse_mean": 0.0012,
+      "key_rate_per_pulse_ci_low": 0.0010,
+      "key_rate_per_pulse_ci_high": 0.0014,
+      "abort_rate": 0.0,
+      ...
+    }]
+  }
+}
+```
+
+All CI lower bounds are clamped to 0; QBER CI upper is clamped to 0.5.
 
 ### Secret-key rate vs loss / QBER vs loss (BB84)
 
