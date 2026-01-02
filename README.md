@@ -44,16 +44,12 @@ The model generates:
 - figures/qber_vs_loss.png
 - reports/latest.json (raw sweep metrics)
 
-### Figure 1: Secret-key rate vs loss (BB84
+### Secret-key rate vs loss / QBER vs loss (BB84)
 
-![Secret-key rate vs loss](figures/key_rate_vs_loss.png)
+![Secret-key rate vs loss](figures/hero_light.png)
 
 **Figure 1. Estimated secret-key rate versus channel loss for BB84.**  
 A Monte-Carlo sweep shows that link loss alone reduces detections but does not destroy secrecy until error rates dominate. Under an intercept–resend attack, the secret-key fraction collapses to zero at moderate loss even while sifted bits remain non-zero, revealing the security cliff where privacy amplification can no longer extract secrecy.
-
-### Figure 2: QBER vs loss (BB84)
-
-![QBER vs loss (BB84)](figures/qber_vs_loss.png)
 
 **Figure 2. Quantum Bit Error Rate (QBER) versus channel loss for BB84.**  
 Without attack, intrinsic measurement noise keeps QBER low across loss. An intercept–resend adversary injects a strong QBER signature, driving errors beyond the tolerable entropy budget. The plotted spikes illustrate the detectable breakage regime that classical throughput monitors would miss without explicit QBER estimation.
