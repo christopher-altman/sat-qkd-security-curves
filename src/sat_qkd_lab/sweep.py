@@ -1,11 +1,19 @@
 from __future__ import annotations
-from typing import List, Dict, Any, Sequence, Optional
+from typing import List, Dict, Any, Sequence, Optional, Tuple
 from concurrent.futures import ProcessPoolExecutor
 import numpy as np
 from .bb84 import simulate_bb84, Attack
 from .link_budget import SatLinkParams, total_channel_loss_db
 from .detector import DetectorParams, DEFAULT_DETECTOR
 from .finite_key import FiniteKeyParams, finite_key_rate_per_pulse, compare_asymptotic_vs_finite
+from .free_space_link import (
+    FreeSpaceLinkParams,
+    total_link_loss_db as free_space_loss_db,
+    effective_background_prob,
+    generate_elevation_profile,
+    estimate_secure_window,
+    sample_turbulence_fading,
+)
 
 
 def sweep_loss(
@@ -353,12 +361,14 @@ def sweep_loss_finite_key(
                 "qber_upper": 1.0,  # Worst case
                 "qber_lower": 0.0,
                 "n_sifted": s.n_sifted,
-                "l_secret_bits": 0,
+                "m_pe": 0,
+                "ell_bits": 0.0,
+                "l_secret_bits": 0.0,
                 "key_rate_per_pulse": 0.0,
                 "key_rate_per_sifted": 0.0,
                 "aborted": True,
                 "leak_ec_bits": 0.0,
-                "privacy_amplification_cost": 0.0,
+                "delta_eps_bits": 0.0,
             }
         else:
             n_errors = int(round(s.qber * s.n_sifted)) if s.n_sifted > 0 else 0
@@ -391,11 +401,14 @@ def sweep_loss_finite_key(
             "n_secret_est_asymptotic": s.n_secret_est,
             "aborted": bool(s.aborted),
             # Finite-key results
+            "qber_hat": fk_result["qber_hat"],
             "qber_upper": fk_result["qber_upper"],
+            "m_pe": fk_result["m_pe"],
+            "ell_bits": fk_result.get("ell_bits", fk_result["l_secret_bits"]),
             "l_secret_bits": fk_result["l_secret_bits"],
             "key_rate_per_pulse_finite": fk_result["key_rate_per_pulse"],
             "leak_ec_bits": fk_result["leak_ec_bits"],
-            "privacy_amplification_cost": fk_result["privacy_amplification_cost"],
+            "delta_eps_bits": fk_result["delta_eps_bits"],
             "finite_key_aborted": fk_result["aborted"],
             # Comparison metrics
             "asymptotic_rate": comparison["asymptotic_rate"],
@@ -407,6 +420,93 @@ def sweep_loss_finite_key(
             "eps_cor": fk_params.eps_cor,
             "eps_total": fk_params.eps_total,
             "ec_efficiency": fk_params.ec_efficiency,
+            "f_ec": fk_params.ec_efficiency,
+            "pe_frac": fk_params.pe_frac,
+        })
+
+    return out
+
+
+def sweep_finite_key_vs_n_sent(
+    loss_db: float,
+    n_sent_values: Sequence[int],
+    flip_prob: float = 0.0,
+    attack: Attack = "none",
+    seed: int = 0,
+    detector: Optional[DetectorParams] = None,
+    finite_key_params: Optional[FiniteKeyParams] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Sweep finite-key rate versus total sent pulses for a fixed loss.
+
+    Parameters
+    ----------
+    loss_db : float
+        Channel loss in dB.
+    n_sent_values : Sequence[int]
+        Total pulses to simulate per point.
+    flip_prob : float
+        Intrinsic bit-flip probability.
+    attack : Attack
+        Attack type (\"none\" or \"intercept_resend\").
+    seed : int
+        Base random seed.
+    detector : DetectorParams, optional
+        Detector model parameters.
+    finite_key_params : FiniteKeyParams, optional
+        Finite-key security parameters.
+
+    Returns
+    -------
+    List[Dict[str, Any]]
+        List of finite-key results keyed by n_sent.
+    """
+    det = detector if detector is not None else DEFAULT_DETECTOR
+    fk_params = finite_key_params if finite_key_params is not None else FiniteKeyParams()
+    out: List[Dict[str, Any]] = []
+
+    for i, n_sent in enumerate(n_sent_values):
+        s = simulate_bb84(
+            n_pulses=int(n_sent),
+            loss_db=float(loss_db),
+            flip_prob=float(flip_prob),
+            attack=attack,
+            seed=seed + i,
+            detector=det,
+        )
+
+        if s.aborted or s.n_sifted <= 0 or np.isnan(s.qber):
+            fk_result = {
+                "qber_hat": s.qber,
+                "qber_upper": 1.0,
+                "m_pe": 0,
+                "ell_bits": 0.0,
+                "l_secret_bits": 0.0,
+                "key_rate_per_pulse": 0.0,
+                "leak_ec_bits": 0.0,
+                "delta_eps_bits": 0.0,
+            }
+        else:
+            n_errors = int(round(s.qber * s.n_sifted))
+            fk_result = finite_key_rate_per_pulse(
+                n_sent=s.n_sent,
+                n_sifted=s.n_sifted,
+                n_errors=n_errors,
+                params=fk_params,
+            )
+
+        out.append({
+            "loss_db": float(loss_db),
+            "attack": str(attack),
+            "n_sent": s.n_sent,
+            "n_sifted": s.n_sifted,
+            "qber_hat": fk_result["qber_hat"],
+            "qber_upper": fk_result["qber_upper"],
+            "m_pe": fk_result["m_pe"],
+            "ell_bits": fk_result.get("ell_bits", fk_result["l_secret_bits"]),
+            "leak_ec_bits": fk_result["leak_ec_bits"],
+            "delta_eps_bits": fk_result["delta_eps_bits"],
+            "key_rate_per_pulse_finite": fk_result["key_rate_per_pulse"],
         })
 
     return out
@@ -458,3 +558,105 @@ def compute_summary_stats(records: List[Dict[str, Any]]) -> Dict[str, Any]:
         },
         "n_points": len(records),
     }
+
+
+def sweep_pass(
+    elevation_deg_values: Sequence[float],
+    time_s_values: Sequence[float],
+    flip_prob: float = 0.0,
+    attack: Attack = "none",
+    n_pulses: int = 200_000,
+    seed: int = 0,
+    detector: Optional[DetectorParams] = None,
+    link_params: Optional[FreeSpaceLinkParams] = None,
+    turbulence: bool = False,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    Sweep over a satellite pass and compute QKD metrics.
+
+    Uses the free-space optical link model for physically-grounded loss
+    calculations.
+
+    Parameters
+    ----------
+    elevation_deg_values : Sequence[float]
+        Elevation angles over the pass.
+    time_s_values : Sequence[float]
+        Time values corresponding to elevations.
+    flip_prob : float
+        Intrinsic bit-flip probability.
+    attack : Attack
+        Attack type.
+    n_pulses : int
+        Number of pulses per time step.
+    seed : int
+        Random seed.
+    detector : DetectorParams, optional
+        Base detector parameters (p_bg may be modified for day/night).
+    link_params : FreeSpaceLinkParams, optional
+        Free-space link parameters.
+    turbulence : bool
+        Enable lognormal turbulence fading.
+
+    Returns
+    -------
+    Tuple[List[Dict[str, Any]], Dict[str, Any]]
+        (list of per-point results, secure window summary)
+    """
+    det_base = detector if detector is not None else DEFAULT_DETECTOR
+    link = link_params if link_params is not None else FreeSpaceLinkParams()
+
+    rng = np.random.default_rng(seed)
+    out: List[Dict[str, Any]] = []
+
+    for i, (el, t) in enumerate(zip(elevation_deg_values, time_s_values)):
+        el_f = float(el)
+        t_f = float(t)
+
+        # Compute loss from free-space model
+        loss_db = free_space_loss_db(el_f, link)
+
+        # Adjust background for day/night
+        p_bg_eff = effective_background_prob(det_base.p_bg, link)
+        det = DetectorParams(eta=det_base.eta, p_bg=p_bg_eff)
+
+        # Apply turbulence fading if enabled
+        if turbulence and link.sigma_ln > 0:
+            fading = sample_turbulence_fading(1, link.sigma_ln, rng)[0]
+            # Fading < 1 means additional loss
+            if fading < 1.0 and fading > 0:
+                loss_db += -10.0 * np.log10(fading)
+
+        # Run BB84 simulation
+        s = simulate_bb84(
+            n_pulses=n_pulses,
+            loss_db=loss_db,
+            flip_prob=flip_prob,
+            attack=attack,
+            seed=seed + i,
+            detector=det,
+        )
+
+        out.append({
+            "time_s": t_f,
+            "elevation_deg": el_f,
+            "loss_db": loss_db,
+            "p_bg_effective": p_bg_eff,
+            "flip_prob": float(flip_prob),
+            "attack": str(attack),
+            "n_sent": s.n_sent,
+            "n_received": s.n_received,
+            "n_sifted": s.n_sifted,
+            "qber": s.qber,
+            "secret_fraction": s.secret_fraction,
+            "key_rate_per_pulse": s.key_rate_per_pulse,
+            "n_secret_est": s.n_secret_est,
+            "aborted": bool(s.aborted),
+        })
+
+    # Compute secure window
+    key_rates = np.array([r["key_rate_per_pulse"] for r in out])
+    time_step_s = float(time_s_values[1] - time_s_values[0]) if len(time_s_values) > 1 else 1.0
+    secure_window = estimate_secure_window(out, key_rates, time_step_s)
+
+    return out, secure_window

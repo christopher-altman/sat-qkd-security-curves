@@ -131,10 +131,9 @@ def validate_seed(seed: Optional[int]) -> Optional[int]:
 # --- Binary Entropy ---
 
 def h2(p: float) -> float:
-    """Binary entropy in bits. Defined as 0 at p=0 or p=1."""
-    if p <= 0.0 or p >= 1.0:
-        return 0.0
-    return -(p * math.log2(p) + (1 - p) * math.log2(1 - p))
+    """Binary entropy in bits with clamping for numerical stability."""
+    p_clamped = min(1.0 - 1e-12, max(1e-12, p))
+    return -(p_clamped * math.log2(p_clamped) + (1.0 - p_clamped) * math.log2(1.0 - p_clamped))
 
 @dataclass(frozen=True)
 class RunSummary:

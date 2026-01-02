@@ -38,11 +38,18 @@ class FiniteKeyParams:
         Error correction efficiency factor (>= 1.0).
         Leaked bits = ec_efficiency * n * h2(QBER).
         Default: 1.16 (typical for practical codes)
+    pe_frac : float
+        Fraction of sifted bits used for parameter estimation (0, 1].
+        Default: 0.5
+    m_pe : int, optional
+        Explicit parameter estimation sample size. If provided, overrides pe_frac.
     """
     eps_pe: float = 1e-10
     eps_sec: float = 1e-10
     eps_cor: float = 1e-15
     ec_efficiency: float = 1.16
+    pe_frac: float = 0.5
+    m_pe: Optional[int] = None
 
     def __post_init__(self):
         if self.eps_pe <= 0 or self.eps_pe >= 1:
@@ -53,11 +60,20 @@ class FiniteKeyParams:
             raise ValueError(f"eps_cor must be in (0, 1), got {self.eps_cor}")
         if self.ec_efficiency < 1.0:
             raise ValueError(f"ec_efficiency must be >= 1.0, got {self.ec_efficiency}")
+        if self.pe_frac <= 0 or self.pe_frac > 1.0:
+            raise ValueError(f"pe_frac must be in (0, 1], got {self.pe_frac}")
+        if self.m_pe is not None and self.m_pe < 1:
+            raise ValueError(f"m_pe must be >= 1 when provided, got {self.m_pe}")
 
     @property
     def eps_total(self) -> float:
         """Total security parameter (sum of failure probabilities)."""
         return self.eps_pe + self.eps_sec + self.eps_cor
+
+    @property
+    def f_ec(self) -> float:
+        """Alias for error correction inefficiency factor."""
+        return self.ec_efficiency
 
 
 def hoeffding_bound(n_samples: int, observed_rate: float, eps: float) -> float:
@@ -125,6 +141,7 @@ def finite_key_bounds(
     n_sifted: int,
     n_errors: int,
     eps_pe: float = 1e-10,
+    m_pe: Optional[int] = None,
 ) -> Dict[str, float]:
     """
     Compute finite-key bounds on QBER using Hoeffding inequality.
@@ -132,11 +149,13 @@ def finite_key_bounds(
     Parameters
     ----------
     n_sifted : int
-        Number of sifted key bits (sample size for QBER estimation).
+        Number of sifted key bits.
     n_errors : int
         Number of errors observed in the sample.
     eps_pe : float
         Parameter estimation failure probability.
+    m_pe : int, optional
+        Sample size used for parameter estimation. If None, uses n_sifted.
 
     Returns
     -------
@@ -156,14 +175,16 @@ def finite_key_bounds(
         }
 
     qber_hat = n_errors / n_sifted
-    qber_upper = hoeffding_bound(n_sifted, qber_hat, eps_pe)
-    qber_lower = hoeffding_lower_bound(n_sifted, qber_hat, eps_pe)
+    m_eff = n_sifted if m_pe is None else max(1, min(n_sifted, m_pe))
+    qber_upper = hoeffding_bound(m_eff, qber_hat, eps_pe)
+    qber_lower = hoeffding_lower_bound(m_eff, qber_hat, eps_pe)
 
     return {
         "qber_hat": qber_hat,
         "qber_upper": min(0.5, qber_upper),  # QBER physical max is 0.5
         "qber_lower": qber_lower,
         "n_sifted": n_sifted,
+        "m_pe": m_eff,
     }
 
 
@@ -176,14 +197,15 @@ def finite_key_secret_length(
     """
     Compute finite-key secret key length using conservative bounds.
 
-    Uses the Devetak-Winter formula with finite-size corrections:
-        l = n * (1 - h(Q_upper)) - leak_EC - log(2/eps_sec) - log(1/eps_cor)
+    Uses a toy-but-recognizable BB84 finite-key bound:
+        ell = n * max(0, 1 - 2*h2(Q_upper)) - leak_EC - delta_eps_bits
 
     where:
         - n is the number of sifted bits available for key generation
         - h is binary entropy
         - Q_upper is the upper bound on QBER
         - leak_EC is error correction leakage
+        - delta_eps_bits = 2*log2(2/eps_sec) + log2(2/eps_cor)
 
     Parameters
     ----------
@@ -200,11 +222,12 @@ def finite_key_secret_length(
     -------
     dict
         Dictionary with:
-        - l_secret_bits: extractable secret key bits (integer, >= 0)
+        - ell_bits: extractable secret key bits (float, >= 0)
+        - l_secret_bits: extractable secret key bits (legacy alias, >= 0)
         - key_rate_per_sifted: secret bits per sifted bit
         - aborted: whether protocol would abort
         - leak_ec_bits: bits leaked to error correction
-        - privacy_amplification_cost: bits for privacy amplification
+        - delta_eps_bits: finite-key epsilon penalty in bits
     """
     if params is None:
         params = FiniteKeyParams()
@@ -212,50 +235,49 @@ def finite_key_secret_length(
     # Check abort condition
     if qber_upper > qber_abort_threshold or qber_upper >= 0.5:
         return {
-            "l_secret_bits": 0,
+            "ell_bits": 0.0,
+            "l_secret_bits": 0.0,
             "key_rate_per_sifted": 0.0,
             "aborted": True,
             "leak_ec_bits": 0.0,
-            "privacy_amplification_cost": 0.0,
+            "delta_eps_bits": 0.0,
             "qber_upper": qber_upper,
         }
 
     if n_sifted <= 0:
         return {
-            "l_secret_bits": 0,
+            "ell_bits": 0.0,
+            "l_secret_bits": 0.0,
             "key_rate_per_sifted": 0.0,
             "aborted": False,
             "leak_ec_bits": 0.0,
-            "privacy_amplification_cost": 0.0,
+            "delta_eps_bits": 0.0,
             "qber_upper": qber_upper,
         }
 
-    # Error correction leakage: f * n * h(Q)
+    # Error correction leakage: f_ec * n * h2(Q)
     # Use qber_upper for conservative estimate
     leak_ec_bits = params.ec_efficiency * n_sifted * h2(qber_upper)
 
-    # Privacy amplification cost (finite-size correction)
-    # log(2/eps_sec) for secrecy, log(1/eps_cor) for correctness
-    pa_cost = math.log2(2.0 / params.eps_sec) + math.log2(1.0 / params.eps_cor)
+    # Finite-key penalty term for secrecy and correctness
+    delta_eps_bits = 2.0 * math.log2(2.0 / params.eps_sec) + math.log2(2.0 / params.eps_cor)
 
-    # Secret fraction using upper bound on QBER
-    # 1 - h(Q_upper) is the asymptotic rate for phase error = bit error (BB84)
-    secret_fraction = 1.0 - h2(qber_upper)
+    # Secret fraction for BB84 (phase error = bit error), with finite-size penalty
+    secret_fraction = max(0.0, 1.0 - 2.0 * h2(qber_upper))
 
     # Extractable bits
-    l_raw = n_sifted * secret_fraction - leak_ec_bits - pa_cost
+    ell_bits = n_sifted * secret_fraction - leak_ec_bits - delta_eps_bits
+    ell_bits = max(0.0, ell_bits)
 
-    # Clamp to non-negative integer
-    l_secret_bits = max(0, int(math.floor(l_raw)))
-
-    key_rate_per_sifted = l_secret_bits / n_sifted if n_sifted > 0 else 0.0
+    key_rate_per_sifted = ell_bits / n_sifted if n_sifted > 0 else 0.0
 
     return {
-        "l_secret_bits": l_secret_bits,
+        "ell_bits": ell_bits,
+        "l_secret_bits": ell_bits,
         "key_rate_per_sifted": key_rate_per_sifted,
         "aborted": False,
         "leak_ec_bits": leak_ec_bits,
-        "privacy_amplification_cost": pa_cost,
+        "delta_eps_bits": delta_eps_bits,
         "qber_upper": qber_upper,
     }
 
@@ -299,7 +321,14 @@ def finite_key_rate_per_pulse(
         params = FiniteKeyParams()
 
     # Step 1: Bound QBER with parameter estimation
-    bounds = finite_key_bounds(n_sifted, n_errors, params.eps_pe)
+    if n_sifted <= 0:
+        m_pe = 0
+    elif params.m_pe is not None:
+        m_pe = max(1, min(n_sifted, params.m_pe))
+    else:
+        m_pe = max(1, int(params.pe_frac * n_sifted))
+
+    bounds = finite_key_bounds(n_sifted, n_errors, params.eps_pe, m_pe=m_pe)
 
     # Step 2: Compute secret key length
     secret = finite_key_secret_length(
@@ -310,18 +339,21 @@ def finite_key_rate_per_pulse(
     )
 
     # Step 3: Compute per-pulse rate
-    key_rate_per_pulse = secret["l_secret_bits"] / n_sent if n_sent > 0 else 0.0
+    key_rate_per_pulse = secret["ell_bits"] / n_sent if n_sent > 0 else 0.0
 
     return {
         **bounds,
         **secret,
         "key_rate_per_pulse": key_rate_per_pulse,
         "n_sent": n_sent,
+        "m_pe": m_pe,
+        "pe_frac": params.pe_frac,
         "eps_pe": params.eps_pe,
         "eps_sec": params.eps_sec,
         "eps_cor": params.eps_cor,
         "eps_total": params.eps_total,
         "ec_efficiency": params.ec_efficiency,
+        "f_ec": params.ec_efficiency,
     }
 
 

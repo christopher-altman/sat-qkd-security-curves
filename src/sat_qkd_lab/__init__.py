@@ -9,4 +9,5 @@ __all__ = [
     "optical_link",
     "helpers",
     "finite_key",
+    "free_space_link",
 ]

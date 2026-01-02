@@ -17,13 +17,13 @@ import pytest
 def test_h2_at_zero():
     """h2(0) should return 0 (no uncertainty when p=0)."""
     from sat_qkd_lab.helpers import h2
-    assert h2(0.0) == 0.0
+    assert h2(0.0) < 1e-8
 
 
 def test_h2_at_one():
     """h2(1) should return 0 (no uncertainty when p=1)."""
     from sat_qkd_lab.helpers import h2
-    assert h2(1.0) == 0.0
+    assert h2(1.0) < 1e-8
 
 
 def test_h2_at_half():
@@ -910,6 +910,8 @@ def test_finite_key_params_defaults():
     assert params.eps_sec == 1e-10
     assert params.eps_cor == 1e-15
     assert params.ec_efficiency == 1.16
+    assert params.pe_frac == 0.5
+    assert params.m_pe is None
     assert params.eps_total == params.eps_pe + params.eps_sec + params.eps_cor
 
 
@@ -930,6 +932,10 @@ def test_finite_key_params_validation():
     # Invalid ec_efficiency (too low)
     with pytest.raises(ValueError, match="ec_efficiency"):
         FiniteKeyParams(ec_efficiency=0.9)
+
+    # Invalid pe_frac
+    with pytest.raises(ValueError, match="pe_frac"):
+        FiniteKeyParams(pe_frac=0.0)
 
 
 def test_hoeffding_bound_basic():
@@ -1027,12 +1033,15 @@ def test_finite_key_rate_per_pulse():
 
     assert "qber_hat" in result
     assert "qber_upper" in result
+    assert "ell_bits" in result
     assert "l_secret_bits" in result
+    assert "delta_eps_bits" in result
+    assert "m_pe" in result
     assert "key_rate_per_pulse" in result
     assert "eps_total" in result
 
     # Should produce positive key
-    assert result["l_secret_bits"] > 0
+    assert result["ell_bits"] > 0
     assert result["key_rate_per_pulse"] > 0
 
 
@@ -1054,6 +1063,62 @@ def test_finite_rate_less_than_asymptotic():
         # Finite rate should be <= asymptotic
         assert result["finite_rate"] <= result["asymptotic_rate"] + 1e-10, \
             f"Finite rate ({result['finite_rate']}) > asymptotic ({result['asymptotic_rate']}) at QBER={qber}"
+
+
+def test_finite_key_rate_never_exceeds_asymptotic_small_case():
+    """Finite-key rate should not exceed asymptotic rate for a fixed run."""
+    import numpy as np
+    from sat_qkd_lab.finite_key import finite_key_rate_per_pulse, FiniteKeyParams
+    from sat_qkd_lab.helpers import h2
+
+    rng = np.random.default_rng(123)
+    n_sent = 10000
+    n_sifted = 5000
+    qber = 0.03
+    n_errors = int(rng.binomial(n_sifted, qber))
+
+    params = FiniteKeyParams()
+    finite = finite_key_rate_per_pulse(n_sent, n_sifted, n_errors, params)
+    asymptotic = (n_sifted / n_sent) * max(0.0, 1.0 - params.ec_efficiency * h2(qber) - h2(qber))
+
+    assert finite["key_rate_per_pulse"] <= asymptotic + 1e-12
+
+
+def test_finite_key_rate_non_decreasing_with_n_sent():
+    """Finite-key rate should be non-decreasing with larger n_sent (within tolerance)."""
+    from sat_qkd_lab.finite_key import finite_key_rate_per_pulse, FiniteKeyParams
+
+    params = FiniteKeyParams()
+    qber = 0.02
+    n_sent_values = [10000, 30000, 100000]
+    rates = []
+
+    for n_sent in n_sent_values:
+        n_sifted = int(0.5 * n_sent)
+        n_errors = int(round(qber * n_sifted))
+        result = finite_key_rate_per_pulse(n_sent, n_sifted, n_errors, params)
+        rates.append(result["key_rate_per_pulse"])
+
+    for i in range(len(rates) - 1):
+        assert rates[i + 1] >= rates[i] - 1e-12
+
+
+def test_stricter_epsilon_reduces_finite_key_rate():
+    """Stricter epsilon_sec should reduce finite-key rate."""
+    from sat_qkd_lab.finite_key import finite_key_rate_per_pulse, FiniteKeyParams
+
+    n_sent = 50000
+    n_sifted = 25000
+    qber = 0.02
+    n_errors = int(round(qber * n_sifted))
+
+    params_loose = FiniteKeyParams(eps_sec=1e-6)
+    params_strict = FiniteKeyParams(eps_sec=1e-12)
+
+    rate_loose = finite_key_rate_per_pulse(n_sent, n_sifted, n_errors, params_loose)["key_rate_per_pulse"]
+    rate_strict = finite_key_rate_per_pulse(n_sent, n_sifted, n_errors, params_strict)["key_rate_per_pulse"]
+
+    assert rate_strict <= rate_loose
 
 
 def test_sweep_loss_finite_key_output():
@@ -1120,17 +1185,23 @@ def test_finite_key_plot_functions_exist():
         plot_finite_key_comparison,
         plot_finite_key_bits_vs_loss,
         plot_finite_size_penalty,
+        plot_finite_key_rate_vs_n_sent,
     )
 
     # Just check they're callable
     assert callable(plot_finite_key_comparison)
     assert callable(plot_finite_key_bits_vs_loss)
     assert callable(plot_finite_size_penalty)
+    assert callable(plot_finite_key_rate_vs_n_sent)
 
 
 def test_finite_key_plot_creates_file(tmp_path):
     """Finite-key plot functions should create output files."""
-    from sat_qkd_lab.plotting import plot_finite_key_comparison, plot_finite_key_bits_vs_loss
+    from sat_qkd_lab.plotting import (
+        plot_finite_key_comparison,
+        plot_finite_key_bits_vs_loss,
+        plot_finite_key_rate_vs_n_sent,
+    )
     from pathlib import Path
 
     records = [
@@ -1146,6 +1217,335 @@ def test_finite_key_plot_creates_file(tmp_path):
 
     bits_path = str(tmp_path / "finite_key_bits.png")
     result2 = plot_finite_key_bits_vs_loss(records, bits_path)
+    assert Path(result2).exists()
+
+    n_sent_records = [
+        {"n_sent": 10000, "key_rate_per_pulse_finite": 0.0005},
+        {"n_sent": 100000, "key_rate_per_pulse_finite": 0.0010},
+    ]
+    rate_path = str(tmp_path / "finite_key_rate_vs_n_sent.png")
+    result3 = plot_finite_key_rate_vs_n_sent(n_sent_records, rate_path)
+    assert Path(result3).exists()
+
+
+# --- Free-Space Link Model Tests ---
+
+def test_free_space_link_params_defaults():
+    """FreeSpaceLinkParams should have sensible defaults."""
+    from sat_qkd_lab.free_space_link import FreeSpaceLinkParams
+
+    params = FreeSpaceLinkParams()
+    assert params.wavelength_m == 850e-9
+    assert params.tx_diameter_m == 0.30
+    assert params.rx_diameter_m == 1.0
+    assert params.sigma_point_rad == 2e-6
+    assert params.altitude_m == 500e3
+    assert params.atm_loss_db_zenith == 0.5
+    assert params.sigma_ln == 0.0
+    assert params.system_loss_db == 3.0
+    assert params.is_night is True
+    assert params.day_background_factor == 100.0
+
+
+def test_diffraction_limited_divergence():
+    """Diffraction-limited beam divergence should be computed correctly."""
+    from sat_qkd_lab.free_space_link import FreeSpaceLinkParams
+
+    # No manual divergence -> compute diffraction limit
+    params = FreeSpaceLinkParams(wavelength_m=850e-9, tx_diameter_m=0.30)
+
+    # Diffraction-limited: theta = 1.22 * lambda / D
+    expected = 1.22 * 850e-9 / 0.30
+    # The effective_divergence_rad property
+    assert abs(params.effective_divergence_rad - expected) < 1e-10
+
+
+def test_slant_range_calculation():
+    """Slant range should increase towards horizon."""
+    from sat_qkd_lab.free_space_link import slant_range_m, FreeSpaceLinkParams
+
+    params = FreeSpaceLinkParams(altitude_m=500e3)
+
+    range_zenith = slant_range_m(90.0, params)
+    range_60 = slant_range_m(60.0, params)
+    range_30 = slant_range_m(30.0, params)
+    range_10 = slant_range_m(10.0, params)
+
+    # Range should increase as elevation decreases
+    assert range_zenith < range_60 < range_30 < range_10
+    # At zenith, range should equal altitude
+    assert abs(range_zenith - 500e3) < 1e3
+
+
+def test_geometric_coupling_efficiency():
+    """Geometric coupling efficiency should decrease with range."""
+    from sat_qkd_lab.free_space_link import geometric_coupling_efficiency, FreeSpaceLinkParams
+
+    params = FreeSpaceLinkParams()
+
+    # Short range = higher coupling
+    eta_short = geometric_coupling_efficiency(500e3, params)
+    eta_long = geometric_coupling_efficiency(1500e3, params)
+
+    assert eta_short > eta_long
+    assert 0 < eta_short <= 1.0
+    assert 0 < eta_long <= 1.0
+
+
+def test_pointing_loss_scales_with_sigma():
+    """Pointing loss should increase with pointing error."""
+    from sat_qkd_lab.free_space_link import pointing_loss_db, FreeSpaceLinkParams
+
+    params_low = FreeSpaceLinkParams(sigma_point_rad=1e-6)
+    params_high = FreeSpaceLinkParams(sigma_point_rad=10e-6)
+
+    loss_low = pointing_loss_db(params_low)
+    loss_high = pointing_loss_db(params_high)
+
+    # Higher pointing error = higher loss
+    assert loss_high > loss_low
+    assert loss_low >= 0
+    assert loss_high >= 0
+
+
+def test_atmospheric_extinction_increases_toward_horizon():
+    """Atmospheric loss should increase toward horizon."""
+    from sat_qkd_lab.free_space_link import atmospheric_extinction_db, FreeSpaceLinkParams
+
+    params = FreeSpaceLinkParams(atm_loss_db_zenith=0.5)
+
+    loss_zenith = atmospheric_extinction_db(90.0, params)
+    loss_60 = atmospheric_extinction_db(60.0, params)
+    loss_30 = atmospheric_extinction_db(30.0, params)
+    loss_10 = atmospheric_extinction_db(10.0, params)
+
+    assert loss_zenith < loss_60 < loss_30 < loss_10
+    # At zenith, loss should equal zenith loss
+    assert abs(loss_zenith - 0.5) < 0.01
+
+
+def test_total_link_loss_monotonic_with_elevation():
+    """Total link loss should decrease monotonically as elevation increases."""
+    from sat_qkd_lab.free_space_link import total_link_loss_db, FreeSpaceLinkParams
+
+    params = FreeSpaceLinkParams()
+
+    elevations = [10.0, 20.0, 30.0, 45.0, 60.0, 75.0, 90.0]
+    losses = [total_link_loss_db(el, params) for el in elevations]
+
+    # Loss should decrease (improve) as elevation increases
+    for i in range(len(losses) - 1):
+        assert losses[i] > losses[i + 1], \
+            f"Loss should decrease with elevation: {losses[i]:.1f} dB at {elevations[i]}° > {losses[i+1]:.1f} dB at {elevations[i+1]}°"
+
+
+def test_turbulence_fading_samples():
+    """Turbulence fading should produce lognormal samples."""
+    from sat_qkd_lab.free_space_link import sample_turbulence_fading
+    import numpy as np
+
+    rng = np.random.default_rng(42)
+    samples = sample_turbulence_fading(10000, sigma_ln=0.3, rng=rng)
+
+    # Check samples are positive
+    assert np.all(samples > 0)
+
+    # Mean of lognormal(0, sigma) is exp(sigma^2/2)
+    expected_mean = np.exp(0.3**2 / 2)
+    assert abs(np.mean(samples) - expected_mean) < 0.05
+
+
+def test_effective_background_prob_day_night():
+    """Day mode should increase background probability."""
+    from sat_qkd_lab.free_space_link import effective_background_prob, FreeSpaceLinkParams
+
+    base_p_bg = 1e-5
+
+    params_night = FreeSpaceLinkParams(is_night=True, day_background_factor=100.0)
+    params_day = FreeSpaceLinkParams(is_night=False, day_background_factor=100.0)
+
+    p_bg_night = effective_background_prob(base_p_bg, params_night)
+    p_bg_day = effective_background_prob(base_p_bg, params_day)
+
+    assert p_bg_day == base_p_bg * 100.0
+    assert p_bg_night == base_p_bg
+
+
+def test_generate_elevation_profile():
+    """Elevation profile should be symmetric and peak at center."""
+    from sat_qkd_lab.free_space_link import generate_elevation_profile
+
+    time_s, elevation_deg = generate_elevation_profile(
+        max_elevation_deg=70.0,
+        min_elevation_deg=10.0,
+        time_step_s=10.0,
+        pass_duration_s=300.0,
+    )
+
+    # Check basic structure
+    assert len(time_s) == len(elevation_deg)
+    assert len(time_s) == 31  # 300/10 + 1
+
+    # Check elevation bounds
+    assert min(elevation_deg) >= 10.0
+    assert max(elevation_deg) <= 70.0
+
+    # Peak should be at/near center
+    import numpy as np
+    peak_idx = np.argmax(elevation_deg)
+    assert 10 <= peak_idx <= 20  # Somewhere in middle third
+
+    # Profile should be roughly symmetric
+    assert abs(elevation_deg[0] - elevation_deg[-1]) < 1.0
+
+
+def test_estimate_secure_window():
+    """Secure window estimation should find positive key rate intervals."""
+    from sat_qkd_lab.free_space_link import estimate_secure_window
+    import numpy as np
+
+    # Simulate records with some positive key rates in the middle
+    records = [
+        {"time_s": 0, "elevation_deg": 10.0, "key_rate_per_pulse": 0},
+        {"time_s": 10, "elevation_deg": 20.0, "key_rate_per_pulse": 0},
+        {"time_s": 20, "elevation_deg": 40.0, "key_rate_per_pulse": 0.001},
+        {"time_s": 30, "elevation_deg": 60.0, "key_rate_per_pulse": 0.002},
+        {"time_s": 40, "elevation_deg": 60.0, "key_rate_per_pulse": 0.003},
+        {"time_s": 50, "elevation_deg": 40.0, "key_rate_per_pulse": 0.002},
+        {"time_s": 60, "elevation_deg": 20.0, "key_rate_per_pulse": 0},
+        {"time_s": 70, "elevation_deg": 10.0, "key_rate_per_pulse": 0},
+    ]
+    key_rates = np.array([r["key_rate_per_pulse"] for r in records])
+
+    result = estimate_secure_window(records, key_rates, time_step_s=10.0)
+
+    # The actual keys returned by estimate_secure_window
+    assert result["secure_window_seconds"] == 40  # 4 secure points * 10s
+    assert result["secure_start_s"] == 20
+    assert result["secure_end_s"] == 50  # Last secure point is at 50s
+    assert result["peak_key_rate"] == 0.003
+
+
+def test_sweep_pass_output_structure():
+    """sweep_pass should return correct output structure."""
+    from sat_qkd_lab.sweep import sweep_pass
+    from sat_qkd_lab.free_space_link import FreeSpaceLinkParams, generate_elevation_profile
+    from sat_qkd_lab.detector import DetectorParams
+
+    time_s, elevation_deg = generate_elevation_profile(
+        max_elevation_deg=60.0,
+        min_elevation_deg=10.0,
+        time_step_s=30.0,
+        pass_duration_s=120.0,
+    )
+
+    link_params = FreeSpaceLinkParams()
+    detector = DetectorParams(eta=0.2, p_bg=1e-5)
+
+    records, summary = sweep_pass(
+        elevation_deg_values=elevation_deg,
+        time_s_values=time_s,
+        n_pulses=10000,
+        seed=42,
+        detector=detector,
+        link_params=link_params,
+    )
+
+    # Check records structure
+    assert len(records) == len(time_s)
+    for r in records:
+        assert "time_s" in r
+        assert "elevation_deg" in r
+        assert "loss_db" in r
+        assert "qber" in r
+        assert "secret_fraction" in r
+        assert "key_rate_per_pulse" in r
+        assert "p_bg_effective" in r
+
+    # Check summary structure (actual keys from estimate_secure_window)
+    assert "secure_window_seconds" in summary
+    assert "peak_key_rate" in summary
+    assert "secure_start_s" in summary
+
+
+def test_day_mode_more_likely_to_abort():
+    """Day mode (high background) should be more likely to produce zero key rate."""
+    from sat_qkd_lab.sweep import sweep_pass
+    from sat_qkd_lab.free_space_link import FreeSpaceLinkParams, generate_elevation_profile
+    from sat_qkd_lab.detector import DetectorParams
+
+    time_s, elevation_deg = generate_elevation_profile(
+        max_elevation_deg=30.0,  # Lower elevation = higher loss
+        min_elevation_deg=10.0,
+        time_step_s=30.0,
+        pass_duration_s=120.0,
+    )
+
+    detector = DetectorParams(eta=0.2, p_bg=1e-5)
+
+    # Night mode
+    link_night = FreeSpaceLinkParams(is_night=True, day_background_factor=100.0)
+    records_night, _ = sweep_pass(
+        elevation_deg_values=elevation_deg,
+        time_s_values=time_s,
+        n_pulses=50000,
+        seed=42,
+        detector=detector,
+        link_params=link_night,
+    )
+
+    # Day mode
+    link_day = FreeSpaceLinkParams(is_night=False, day_background_factor=100.0)
+    records_day, _ = sweep_pass(
+        elevation_deg_values=elevation_deg,
+        time_s_values=time_s,
+        n_pulses=50000,
+        seed=42,
+        detector=detector,
+        link_params=link_day,
+    )
+
+    # Count positive key rates
+    night_positive = sum(1 for r in records_night if r["key_rate_per_pulse"] > 0)
+    day_positive = sum(1 for r in records_day if r["key_rate_per_pulse"] > 0)
+
+    # Day should have fewer or equal positive key rate points
+    assert day_positive <= night_positive
+
+
+def test_free_space_plot_functions_exist():
+    """Free-space link plot functions should be importable."""
+    from sat_qkd_lab.plotting import (
+        plot_key_rate_vs_elevation,
+        plot_secure_window,
+        plot_loss_vs_elevation,
+    )
+
+    assert callable(plot_key_rate_vs_elevation)
+    assert callable(plot_secure_window)
+    assert callable(plot_loss_vs_elevation)
+
+
+def test_free_space_plot_creates_file(tmp_path):
+    """Free-space link plot functions should create output files."""
+    from sat_qkd_lab.plotting import plot_key_rate_vs_elevation, plot_loss_vs_elevation
+    from pathlib import Path
+
+    records = [
+        {"time_s": 0, "elevation_deg": 10.0, "loss_db": 50.0,
+         "key_rate_per_pulse": 0, "secret_fraction": 0},
+        {"time_s": 30, "elevation_deg": 30.0, "loss_db": 35.0,
+         "key_rate_per_pulse": 0.001, "secret_fraction": 0.5},
+        {"time_s": 60, "elevation_deg": 10.0, "loss_db": 50.0,
+         "key_rate_per_pulse": 0, "secret_fraction": 0},
+    ]
+
+    elev_path = str(tmp_path / "key_rate_vs_elevation.png")
+    result = plot_key_rate_vs_elevation(records, elev_path)
+    assert Path(result).exists()
+
+    loss_path = str(tmp_path / "loss_vs_elevation.png")
+    result2 = plot_loss_vs_elevation(records, loss_path)
     assert Path(result2).exists()
 
 

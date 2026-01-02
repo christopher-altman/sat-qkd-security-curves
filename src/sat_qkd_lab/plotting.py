@@ -356,6 +356,198 @@ def plot_finite_size_penalty(
     return out_path
 
 
+def plot_finite_key_rate_vs_n_sent(
+    records: Sequence[Dict[str, Any]],
+    out_path: str,
+    log_x: bool = True,
+) -> str:
+    """
+    Plot finite-key rate per pulse vs total sent pulses.
+
+    Parameters
+    ----------
+    records : Sequence[Dict[str, Any]]
+        Finite-key results with n_sent and key_rate_per_pulse_finite.
+    out_path : str
+        Output path for the plot.
+    log_x : bool
+        If True, use log scale for n_sent.
+
+    Returns
+    -------
+    str
+        Path to the saved plot.
+    """
+    n_sent = _extract(records, "n_sent")
+    key_rate = _extract(records, "key_rate_per_pulse_finite")
+
+    fig, ax = plt.subplots()
+    ax.plot(n_sent, key_rate, marker="o", markersize=3)
+
+    ax.set_xlabel("Total pulses sent (n_sent)")
+    ax.set_ylabel("Finite-key rate (per pulse)")
+    ax.set_title("Finite-Key Rate vs Total Pulses (BB84)")
+    ax.set_ylim(bottom=0)
+    if log_x:
+        ax.set_xscale("log")
+
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+
+    return out_path
+
+
+# --- Pass Sweep Plotting ---
+
+def plot_key_rate_vs_elevation(
+    records: Sequence[Dict[str, Any]],
+    out_path: str,
+    show_day_night: bool = False,
+    records_day: Optional[Sequence[Dict[str, Any]]] = None,
+) -> str:
+    """
+    Plot key rate vs elevation angle for satellite pass.
+
+    Parameters
+    ----------
+    records : Sequence[Dict[str, Any]]
+        Pass sweep results (night or primary).
+    out_path : str
+        Output path for the plot.
+    show_day_night : bool
+        If True and records_day provided, show day/night comparison.
+    records_day : Sequence[Dict[str, Any]], optional
+        Day-time pass results for comparison.
+
+    Returns
+    -------
+    str
+        Path to the saved plot.
+    """
+    elevation = _extract(records, "elevation_deg")
+    key_rate = _extract(records, "key_rate_per_pulse")
+
+    fig, ax = plt.subplots()
+
+    ax.plot(elevation, key_rate, label="Night" if show_day_night else "Key rate", marker=".")
+
+    if show_day_night and records_day is not None:
+        elevation_day = _extract(records_day, "elevation_deg")
+        key_rate_day = _extract(records_day, "key_rate_per_pulse")
+        ax.plot(elevation_day, key_rate_day, label="Day", marker=".", linestyle="--")
+
+    ax.set_xlabel("Elevation angle (degrees)")
+    ax.set_ylabel("Key rate (per pulse)")
+    ax.set_title("Secret Key Rate vs Elevation (Satellite Pass)")
+    if show_day_night:
+        ax.legend()
+    ax.set_ylim(bottom=0)
+    ax.set_xlim(left=0, right=90)
+
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+
+    return out_path
+
+
+def plot_secure_window(
+    records: Sequence[Dict[str, Any]],
+    out_path: str,
+    secure_start_s: Optional[float] = None,
+    secure_end_s: Optional[float] = None,
+) -> str:
+    """
+    Plot key rate over time with secure window highlighted.
+
+    Parameters
+    ----------
+    records : Sequence[Dict[str, Any]]
+        Pass sweep results with time_s and key_rate fields.
+    out_path : str
+        Output path for the plot.
+    secure_start_s : float, optional
+        Start of secure window in seconds.
+    secure_end_s : float, optional
+        End of secure window in seconds.
+
+    Returns
+    -------
+    str
+        Path to the saved plot.
+    """
+    time_s = _extract(records, "time_s")
+    key_rate = _extract(records, "key_rate_per_pulse")
+
+    fig, ax1 = plt.subplots()
+
+    # Plot key rate
+    ax1.plot(time_s, key_rate, "b-", label="Key rate")
+    ax1.set_xlabel("Time (seconds)")
+    ax1.set_ylabel("Key rate (per pulse)", color="b")
+    ax1.tick_params(axis="y", labelcolor="b")
+    ax1.set_ylim(bottom=0)
+
+    # Highlight secure window
+    if secure_start_s is not None and secure_end_s is not None:
+        ax1.axvspan(secure_start_s, secure_end_s, alpha=0.2, color="green",
+                    label=f"Secure window: {secure_end_s - secure_start_s:.0f}s")
+
+    # Add elevation on secondary axis
+    if "elevation_deg" in records[0]:
+        elevation = _extract(records, "elevation_deg")
+        ax2 = ax1.twinx()
+        ax2.plot(time_s, elevation, "r--", alpha=0.5, label="Elevation")
+        ax2.set_ylabel("Elevation (degrees)", color="r")
+        ax2.tick_params(axis="y", labelcolor="r")
+        ax2.set_ylim(0, 90)
+
+    ax1.set_title("Secure Communication Window")
+    ax1.legend(loc="upper left")
+
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+
+    return out_path
+
+
+def plot_loss_vs_elevation(
+    records: Sequence[Dict[str, Any]],
+    out_path: str,
+) -> str:
+    """
+    Plot total link loss vs elevation angle.
+
+    Parameters
+    ----------
+    records : Sequence[Dict[str, Any]]
+        Pass sweep results with elevation_deg and loss_db.
+    out_path : str
+        Output path for the plot.
+
+    Returns
+    -------
+    str
+        Path to the saved plot.
+    """
+    elevation = _extract(records, "elevation_deg")
+    loss = _extract(records, "loss_db")
+
+    fig, ax = plt.subplots()
+
+    ax.plot(elevation, loss, marker=".")
+
+    ax.set_xlabel("Elevation angle (degrees)")
+    ax.set_ylabel("Total link loss (dB)")
+    ax.set_title("Free-Space Link Loss vs Elevation")
+    ax.set_xlim(0, 90)
+    ax.invert_yaxis()  # Higher loss at bottom
+
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+
+    return out_path
+
+
 def plot_decoy_comparison(
     records_bb84: Sequence[Dict[str, Any]],
     records_decoy: Sequence[Dict[str, Any]],

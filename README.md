@@ -110,27 +110,76 @@ Invalid inputs raise `ValueError` with the parameter name and invalid value.
 
 This ensures aborted trials contribute zero to aggregated statistics.
 
-**Finite-Key Analysis** — The `--finite-key` flag enables finite-size security analysis using Hoeffding-type concentration bounds. This computes conservative secret key length estimates that account for statistical uncertainty in parameter estimation:
+**Finite-Key Analysis** — The `--finite-key` flag enables finite-size security analysis using Hoeffding-type concentration bounds. This computes conservative secret key length estimates that account for statistical uncertainty in parameter estimation and explicit ε-budgeting:
 
 - `--eps-pe`: Parameter estimation failure probability (default 1e-10)
 - `--eps-sec`: Secrecy failure probability (default 1e-10)
 - `--eps-cor`: Correctness failure probability (default 1e-15)
 - `--ec-efficiency`: Error correction efficiency factor (default 1.16)
+- `--f-ec`: Alias for `--ec-efficiency`
+- `--pe-frac`: Fraction of sifted bits used for parameter estimation (default 0.5)
+- `--m-pe`: Explicit parameter estimation sample size (overrides `--pe-frac`)
+- `--n-sent`: Total pulses sent (overrides `--pulses` when set)
+- `--rep-rate` + `--pass-seconds`: Alternative pulse accounting, with `n_sent = rep_rate * pass_seconds`
 
 The finite-key rate is always ≤ the asymptotic rate, with the penalty decreasing as block size increases. The analysis uses:
 - Hoeffding bounds for QBER estimation uncertainty
-- Devetak-Winter formula with finite-size corrections
+- Explicit error-correction leakage and ε-penalty terms
 - Total security parameter: `eps_total = eps_pe + eps_sec + eps_cor`
+
+Finite-key math (toy-but-recognizable BB84 bound):
+
+```
+h2(q) = -q*log2(q) - (1-q)*log2(1-q), with q clamped into [1e-12, 1-1e-12]
+delta = sqrt( ln(1/eps_pe) / (2*m_pe) )
+qber_upper = min(0.5, q_hat + delta)
+
+leak_ec_bits = f_ec * n_sifted * h2(qber_upper)
+delta_eps_bits = 2*log2(2/eps_sec) + log2(2/eps_cor)
+ell_bits = n_sifted * max(0, 1 - 2*h2(qber_upper)) - leak_ec_bits - delta_eps_bits
+key_rate_per_pulse_finite = ell_bits / n_sent
+```
 
 References:
 - Tomamichel et al., "Tight finite-key analysis for quantum cryptography" (Nature Comm. 2012)
 - Lim et al., "Concise security bounds for practical decoy-state QKD" (PRA 2014)
+
+**Free-Space Optical Link Model** — The `pass-sweep` command provides a physically-grounded free-space link budget for satellite-to-ground QKD:
+
+- **Diffraction/Coupling Model**: Gaussian beam propagation with diffraction-limited divergence (`θ = 1.22λ/D`) and receiver aperture coupling efficiency
+- **Pointing Error/Jitter**: Rayleigh-distributed angular error with configurable `--sigma-point` (default 2 µrad)
+- **Atmospheric Extinction**: Kasten-Young airmass formula with zenith loss scaling by elevation
+- **Turbulence/Scintillation**: Lognormal fading model (`--turbulence` flag, `--sigma-ln` parameter)
+- **Day/Night Background**: `--day` flag increases background noise by `--day-bg-factor` (default 100×)
+
+```bash
+# Night-time pass simulation (default)
+./py -m sat_qkd_lab.run pass-sweep --max-elevation 70 --pass-duration 300
+
+# Day-time pass with turbulence
+./py -m sat_qkd_lab.run pass-sweep --day --turbulence --sigma-ln 0.3
+
+# Custom optical parameters
+./py -m sat_qkd_lab.run pass-sweep --tx-diameter 0.15 --rx-diameter 0.5 --altitude 600e3
+```
+
+Outputs:
+- `figures/key_rate_vs_elevation.png` — Key rate vs elevation angle over pass
+- `figures/secure_window_per_pass.png` — Secure communication window timing
+- `figures/loss_vs_elevation.png` — Total link loss vs elevation
+- `reports/latest.json` — Pass sweep results with secure window summary
+
+References:
+- Liao et al., "Satellite-to-ground quantum key distribution" (Nature 2017)
+- Bourgoin et al., "Free-space QKD to a moving receiver" (NJP 2013)
 
 ### Simulator API
 
 The core simulation functions are:
 - `sat_qkd_lab.bb84.simulate_bb84()` — Single-photon BB84 Monte Carlo simulation
 - `sat_qkd_lab.decoy_bb84.simulate_decoy_bb84()` — Decoy-state BB84 with vacuum + weak decoy
+- `sat_qkd_lab.free_space_link.total_link_loss_db()` — Free-space link loss from elevation angle
+- `sat_qkd_lab.sweep.sweep_pass()` — Satellite pass simulation with free-space link model
 
 Both return structured results with QBER, secret fraction, and key rate metrics.
 
@@ -148,6 +197,15 @@ Both return structured results with QBER, secret fraction, and key rate metrics.
 
 # Finite-key analysis sweep
 ./py -m sat_qkd_lab.run sweep --finite-key --pulses 500000 --eps-pe 1e-10 --eps-sec 1e-10
+
+# Finite-key rate vs total pulses (uses representative loss point)
+./py -m sat_qkd_lab.run sweep --finite-key --rep-rate 1e7 --pass-seconds 30
+
+# Free-space satellite pass sweep (night-time)
+./py -m sat_qkd_lab.run pass-sweep --max-elevation 60 --pass-duration 300
+
+# Free-space pass with turbulence and day-time background
+./py -m sat_qkd_lab.run pass-sweep --day --turbulence --sigma-ln 0.3
 ```
 
 ## Results
@@ -162,6 +220,10 @@ The model generates:
 - `figures/finite_key_comparison.png` — Asymptotic vs finite-key rate (when `--finite-key`)
 - `figures/finite_key_bits_vs_loss.png` — Extractable secret bits vs loss (when `--finite-key`)
 - `figures/finite_size_penalty.png` — Finite-size penalty factor vs loss (when `--finite-key`)
+- `figures/finite_key_rate_vs_n_sent.png` — Finite-key rate vs total pulses (when `--finite-key`)
+- `figures/key_rate_vs_elevation.png` — Key rate vs elevation angle (when `pass-sweep`)
+- `figures/secure_window_per_pass.png` — Secure window timing over pass (when `pass-sweep`)
+- `figures/loss_vs_elevation.png` — Total link loss vs elevation (when `pass-sweep`)
 - `reports/latest.json` — Raw sweep metrics with schema version and timestamp
 
 **Figure 1. Estimated secret-key rate versus channel loss for BB84.** ([↑ featured figure](#featured-figure))  
@@ -176,8 +238,8 @@ The output JSON includes these fields for CI sweeps:
 
 ```json
 {
-  "schema_version": "0.3",
-  "generated_utc": "2026-01-02T...",
+  "schema_version": "0.4",
+  "generated_utc": "2026-01-02T00:00:00Z",
   "loss_sweep_ci": {
     "no_attack": [{
       "qber_mean": 0.025,
@@ -189,8 +251,7 @@ The output JSON includes these fields for CI sweeps:
       "key_rate_per_pulse_mean": 0.0012,
       "key_rate_per_pulse_ci_low": 0.0010,
       "key_rate_per_pulse_ci_high": 0.0014,
-      "abort_rate": 0.0,
-      ...
+      "abort_rate": 0.0
     }]
   }
 }
@@ -200,18 +261,20 @@ For finite-key sweeps (`--finite-key`), the JSON includes additional fields:
 
 ```json
 {
-  "schema_version": "0.3",
+  "schema_version": "0.4",
   "finite_key_sweep": {
     "no_attack": [{
       "loss_db": 25.0,
       "qber": 0.025,
+      "qber_hat": 0.025,
       "qber_upper": 0.032,
-      "l_secret_bits": 45000,
+      "ell_bits": 45000.0,
       "key_rate_per_pulse_asymptotic": 0.0012,
       "key_rate_per_pulse_finite": 0.0009,
       "finite_size_penalty": 0.25,
       "eps_total": 2.00001e-10,
-      ...
+      "f_ec": 1.16,
+      "delta_eps_bits": 150.0
     }]
   },
   "parameters": {
@@ -219,7 +282,9 @@ For finite-key sweeps (`--finite-key`), the JSON includes additional fields:
     "eps_pe": 1e-10,
     "eps_sec": 1e-10,
     "eps_cor": 1e-15,
-    "ec_efficiency": 1.16
+    "ec_efficiency": 1.16,
+    "pe_frac": 0.5,
+    "m_pe": null
   }
 }
 ```
