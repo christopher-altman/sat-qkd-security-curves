@@ -54,7 +54,8 @@ def plot_key_metrics_vs_loss(
     plt.ylabel("Asymptotic secret fraction")
     plt.title("Secret fraction vs loss (BB84)")
     plt.legend()
-    k_path = f"{out_prefix}_key_fraction_vs_loss.png"
+    # Canonical filename (cleaner than legacy key_key_fraction_vs_loss.png)
+    k_path = f"{out_prefix}_fraction_vs_loss.png"
     plt.savefig(k_path, dpi=200, bbox_inches="tight")
     plt.close()
 

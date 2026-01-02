@@ -150,11 +150,16 @@ def _run_sweep(args: argparse.Namespace) -> None:
             no_attack, attack,
             str(outdir / "figures" / "qber_vs_loss_ci.png")
         )
-        key_ci_path = plot_key_rate_vs_loss_ci(
+        # Canonical name for secret fraction CI plot
+        sf_ci_path = plot_key_rate_vs_loss_ci(
             no_attack, attack,
-            str(outdir / "figures" / "key_rate_vs_loss_ci.png")
+            str(outdir / "figures" / "secret_fraction_vs_loss_ci.png")
         )
-        print("CI Plots:", qber_ci_path, key_ci_path)
+        # Legacy alias for backwards compatibility
+        import shutil
+        legacy_sf_ci_path = outdir / "figures" / "key_rate_vs_loss_ci.png"
+        shutil.copy(sf_ci_path, legacy_sf_ci_path)
+        print("CI Plots:", qber_ci_path, sf_ci_path)
 
         # Build report with CI data
         report = {
@@ -180,7 +185,8 @@ def _run_sweep(args: argparse.Namespace) -> None:
             },
             "artifacts": {
                 "qber_ci_plot": "qber_vs_loss_ci.png",
-                "key_ci_plot": "key_rate_vs_loss_ci.png",
+                "secret_fraction_ci_plot": "secret_fraction_vs_loss_ci.png",
+                "key_ci_plot": "key_rate_vs_loss_ci.png",  # legacy alias
             },
         }
     else:
@@ -206,6 +212,10 @@ def _run_sweep(args: argparse.Namespace) -> None:
             no_attack, attack,
             str(outdir / "figures" / "key")
         )
+        # Legacy alias for backwards compatibility
+        import shutil
+        legacy_k_path = outdir / "figures" / "key_key_fraction_vs_loss.png"
+        shutil.copy(k_path, legacy_k_path)
         print("Plots:", q_path, k_path)
 
         report = {
@@ -227,6 +237,7 @@ def _run_sweep(args: argparse.Namespace) -> None:
             "artifacts": {
                 "qber_plot": str(Path(q_path).name),
                 "secret_fraction_plot": str(Path(k_path).name),
+                "key_fraction_plot": "key_key_fraction_vs_loss.png",  # legacy alias
             },
         }
 

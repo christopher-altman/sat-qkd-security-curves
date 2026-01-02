@@ -856,6 +856,49 @@ def test_happy_path_bb84_produces_nonzero_output():
     assert result.key_rate_per_pulse > 0.0
 
 
+# --- Figure Filename Tests ---
+
+def test_plot_key_metrics_creates_canonical_filenames(tmp_path):
+    """plot_key_metrics_vs_loss should create canonical figure filenames."""
+    from sat_qkd_lab.plotting import plot_key_metrics_vs_loss
+
+    records = [
+        {"loss_db": 20.0, "qber": 0.01, "secret_fraction": 0.9},
+        {"loss_db": 30.0, "qber": 0.02, "secret_fraction": 0.85},
+    ]
+
+    prefix = str(tmp_path / "key")
+    q_path, k_path = plot_key_metrics_vs_loss(records, records, prefix)
+
+    # Check canonical filenames
+    assert q_path.endswith("key_qber_vs_loss.png")
+    assert k_path.endswith("key_fraction_vs_loss.png")
+
+    # Check files exist
+    from pathlib import Path
+    assert Path(q_path).exists()
+    assert Path(k_path).exists()
+
+
+def test_plot_ci_creates_canonical_filename(tmp_path):
+    """plot_key_rate_vs_loss_ci should create canonical figure filename."""
+    from sat_qkd_lab.plotting import plot_key_rate_vs_loss_ci
+
+    records = [
+        {"loss_db": 20.0, "secret_fraction_mean": 0.9,
+         "secret_fraction_ci_low": 0.85, "secret_fraction_ci_high": 0.95},
+        {"loss_db": 30.0, "secret_fraction_mean": 0.8,
+         "secret_fraction_ci_low": 0.75, "secret_fraction_ci_high": 0.85},
+    ]
+
+    out_path = str(tmp_path / "secret_fraction_vs_loss_ci.png")
+    result_path = plot_key_rate_vs_loss_ci(records, records, out_path)
+
+    from pathlib import Path
+    assert Path(result_path).exists()
+    assert result_path.endswith("secret_fraction_vs_loss_ci.png")
+
+
 # Keep the original sanity test for backwards compatibility
 def test_sanity():
     assert True
