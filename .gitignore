@@ -37,3 +37,6 @@ coverage.xml
 
 # Generated run outputs
 runs/
+
+# Generated reports
+reports/latest.json
