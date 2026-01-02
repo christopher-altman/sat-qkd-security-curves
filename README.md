@@ -52,8 +52,6 @@ The model generates:
 **Figure 1. Estimated secret-key rate versus channel loss for BB84.**  
 A Monte-Carlo sweep shows that link loss alone reduces detections but does not destroy secrecy until error rates dominate. Under an intercept–resend attack, the secret-key fraction collapses to zero at moderate loss even while sifted bits remain non-zero, revealing the security cliff where privacy amplification can no longer extract secrecy.
 
-CAPTION
-
 ### Figure 2: QBER vs loss (BB84)
 
 ![QBER vs loss (BB84)](figures/qber_vs_loss.png)
