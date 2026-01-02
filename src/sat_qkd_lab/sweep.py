@@ -2,7 +2,8 @@ from __future__ import annotations
 from typing import List, Dict, Any, Sequence, Optional, Tuple
 from concurrent.futures import ProcessPoolExecutor
 import numpy as np
-from .bb84 import simulate_bb84, Attack
+from .bb84 import simulate_bb84
+from .attacks import Attack, AttackConfig
 from .link_budget import SatLinkParams, total_channel_loss_db
 from .detector import DetectorParams, DEFAULT_DETECTOR
 from .finite_key import FiniteKeyParams, finite_key_rate_per_pulse, compare_asymptotic_vs_finite
@@ -23,6 +24,7 @@ def sweep_loss(
     n_pulses: int = 200_000,
     seed: int = 0,
     detector: Optional[DetectorParams] = None,
+    attack_config: Optional[AttackConfig] = None,
 ) -> List[Dict[str, Any]]:
     """
     Sweep over loss values and run BB84 simulation for each.
@@ -57,6 +59,7 @@ def sweep_loss(
             attack=attack,
             seed=seed + i,
             detector=det,
+            attack_config=attack_config,
         )
         out.append({
             "loss_db": float(loss_db),
@@ -82,6 +85,7 @@ def sweep_satellite_pass(
     seed: int = 0,
     link_params: SatLinkParams | None = None,
     detector: Optional[DetectorParams] = None,
+    attack_config: Optional[AttackConfig] = None,
 ) -> List[Dict[str, Any]]:
     """
     Sweep over satellite elevation angles and run BB84 simulation for each.
@@ -101,6 +105,7 @@ def sweep_satellite_pass(
             attack=attack,
             seed=seed + i,
             detector=det,
+            attack_config=attack_config,
         )
         out.append({
             "elevation_deg": float(el),
@@ -121,8 +126,9 @@ def sweep_satellite_pass(
 
 def _run_single_trial(args: tuple) -> Dict[str, Any]:
     """Worker function for parallel sweep trials."""
-    loss_db, flip_prob, attack, n_pulses, seed, det_eta, det_p_bg = args
-    det = DetectorParams(eta=det_eta, p_bg=det_p_bg)
+    (loss_db, flip_prob, attack, n_pulses, seed, det_eta, det_p_bg, det_eta_z,
+     det_eta_x, attack_config) = args
+    det = DetectorParams(eta=det_eta, p_bg=det_p_bg, eta_z=det_eta_z, eta_x=det_eta_x)
     s = simulate_bb84(
         n_pulses=n_pulses,
         loss_db=loss_db,
@@ -130,6 +136,7 @@ def _run_single_trial(args: tuple) -> Dict[str, Any]:
         attack=attack,
         seed=seed,
         detector=det,
+        attack_config=attack_config,
     )
     return {
         "qber": s.qber,
@@ -151,6 +158,7 @@ def sweep_loss_with_ci(
     n_trials: int = 10,
     detector: Optional[DetectorParams] = None,
     n_workers: int = 1,
+    attack_config: Optional[AttackConfig] = None,
 ) -> List[Dict[str, Any]]:
     """
     Sweep over loss values with Monte Carlo confidence intervals.
@@ -202,7 +210,8 @@ def sweep_loss_with_ci(
         # Use SeedSequence-derived seeds for independence
         trial_args = [
             (float(loss_db), float(flip_prob), attack, n_pulses,
-             int(child_seeds[i * n_trials + t].generate_state(1)[0]), det.eta, det.p_bg)
+             int(child_seeds[i * n_trials + t].generate_state(1)[0]), det.eta, det.p_bg,
+             det.eta_z, det.eta_x, attack_config)
             for t in range(n_trials)
         ]
 
@@ -310,6 +319,7 @@ def sweep_loss_finite_key(
     seed: int = 0,
     detector: Optional[DetectorParams] = None,
     finite_key_params: Optional[FiniteKeyParams] = None,
+    attack_config: Optional[AttackConfig] = None,
 ) -> List[Dict[str, Any]]:
     """
     Sweep over loss values with finite-key analysis.
@@ -351,6 +361,7 @@ def sweep_loss_finite_key(
             attack=attack,
             seed=seed + i,
             detector=det,
+            attack_config=attack_config,
         )
 
         # Compute finite-key analysis

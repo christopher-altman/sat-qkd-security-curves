@@ -2,6 +2,7 @@ from __future__ import annotations
 import argparse
 import math
 import json
+from typing import Any
 from datetime import datetime, timezone
 import numpy as np
 from pathlib import Path
@@ -31,13 +32,15 @@ from .plotting import (
     plot_key_rate_vs_elevation,
     plot_secure_window,
     plot_loss_vs_elevation,
+    plot_attack_comparison_key_rate,
 )
 from .free_space_link import FreeSpaceLinkParams, generate_elevation_profile
 from .detector import DetectorParams, DEFAULT_DETECTOR
 from .decoy_bb84 import DecoyParams, sweep_decoy_loss
+from .attacks import Attack, AttackConfig
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="sat-qkd-security-curves")
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -61,6 +64,22 @@ def main() -> None:
                    help="Detector efficiency (0..1)")
     s.add_argument("--p-bg", type=float, default=DEFAULT_DETECTOR.p_bg,
                    help="Background/dark click probability per pulse")
+    s.add_argument("--attack", type=str, default="intercept_resend",
+                   choices=["none", "intercept_resend", "pns", "time_shift", "blinding"],
+                   help="Attack model for comparison curve")
+    s.add_argument("--mu", type=float, default=0.6,
+                   help="Mean photon number per pulse for PNS toy model")
+    s.add_argument("--timeshift-bias", type=float, default=0.0,
+                   help="Time-shift bias toward higher-efficiency basis (0..1)")
+    s.add_argument("--blinding-mode", type=str, default="loud",
+                   choices=["loud", "stealth"],
+                   help="Blinding mode (loud or stealth)")
+    s.add_argument("--blinding-prob", type=float, default=0.05,
+                   help="Forced click probability for blinding attack")
+    s.add_argument("--eta-z", type=float, default=None,
+                   help="Z-basis detection efficiency (default: --eta)")
+    s.add_argument("--eta-x", type=float, default=None,
+                   help="X-basis detection efficiency (default: --eta)")
     # Monte Carlo CI parameters
     s.add_argument("--trials", type=int, default=1,
                    help="Number of trials per loss value (>1 enables CI)")
@@ -130,6 +149,37 @@ def main() -> None:
     d.add_argument("--eta-x", type=float, default=None,
                    help="X-basis detection efficiency (default: --eta)")
 
+    # --- attack-sweep command ---
+    a = sub.add_parser("attack-sweep", help="Compare multiple attack modes over loss.")
+    a.add_argument("--loss-min", type=float, default=20.0)
+    a.add_argument("--loss-max", type=float, default=60.0)
+    a.add_argument("--steps", type=int, default=15)
+    a.add_argument("--flip-prob", type=float, default=0.005)
+    a.add_argument("--pulses", type=int, default=50_000)
+    a.add_argument("--seed", type=int, default=0)
+    a.add_argument("--outdir", type=str, default=".")
+    a.add_argument("--eta", type=float, default=DEFAULT_DETECTOR.eta,
+                   help="Detector efficiency (0..1)")
+    a.add_argument("--p-bg", type=float, default=DEFAULT_DETECTOR.p_bg,
+                   help="Background/dark click probability per pulse")
+    a.add_argument("--eta-z", type=float, default=None,
+                   help="Z-basis detection efficiency (default: --eta)")
+    a.add_argument("--eta-x", type=float, default=None,
+                   help="X-basis detection efficiency (default: --eta)")
+    a.add_argument("--attacks", type=str, nargs="+",
+                   default=["none", "intercept_resend", "pns"],
+                   choices=["none", "intercept_resend", "pns", "time_shift", "blinding"],
+                   help="Attack modes to compare")
+    a.add_argument("--mu", type=float, default=0.6,
+                   help="Mean photon number per pulse for PNS toy model")
+    a.add_argument("--timeshift-bias", type=float, default=0.5,
+                   help="Time-shift bias toward higher-efficiency basis (0..1)")
+    a.add_argument("--blinding-mode", type=str, default="loud",
+                   choices=["loud", "stealth"],
+                   help="Blinding mode (loud or stealth)")
+    a.add_argument("--blinding-prob", type=float, default=0.05,
+                   help="Forced click probability for blinding attack")
+
     # --- pass-sweep command ---
     ps = sub.add_parser("pass-sweep", help="Simulate QKD during a satellite pass over elevation profile.")
     ps.add_argument("--max-elevation", type=float, default=60.0,
@@ -186,6 +236,11 @@ def main() -> None:
     ps.add_argument("--day-bg-factor", type=float, default=100.0,
                     help="Day/night background ratio (default: 100)")
 
+    return p
+
+
+def main() -> None:
+    p = build_parser()
     args = p.parse_args()
 
     # Validate arguments post-parse
@@ -195,6 +250,8 @@ def main() -> None:
         _run_sweep(args)
     elif args.cmd == "decoy-sweep":
         _run_decoy_sweep(args)
+    elif args.cmd == "attack-sweep":
+        _run_attack_sweep(args)
     elif args.cmd == "pass-sweep":
         _run_pass_sweep(args)
 
@@ -202,20 +259,26 @@ def main() -> None:
 def _validate_args(args: argparse.Namespace) -> None:
     """Validate CLI arguments after parsing."""
     # Common validations for sweep/decoy-sweep commands
-    if args.cmd in ("sweep", "decoy-sweep"):
+    if args.cmd in ("sweep", "decoy-sweep", "attack-sweep"):
         validate_float("loss-min", args.loss_min, min_value=0.0)
         validate_float("loss-max", args.loss_max, min_value=0.0)
         if args.loss_min > args.loss_max:
             raise ValueError(f"loss-min ({args.loss_min}) > loss-max ({args.loss_max})")
         validate_int("steps", args.steps, min_value=1)
-        validate_int("trials", args.trials, min_value=1)
+        if hasattr(args, "trials"):
+            validate_int("trials", args.trials, min_value=1)
 
-    # Common validations for all commands
-    validate_float("flip-prob", args.flip_prob, min_value=0.0, max_value=0.5)
-    validate_int("pulses", args.pulses, min_value=1)
-    validate_seed(args.seed)
-    validate_float("eta", args.eta, min_value=0.0, max_value=1.0)
-    validate_float("p-bg", args.p_bg, min_value=0.0, max_value=1.0)
+    # Common validations for all commands with sweep-style controls
+    if hasattr(args, "flip_prob"):
+        validate_float("flip-prob", args.flip_prob, min_value=0.0, max_value=0.5)
+    if hasattr(args, "pulses"):
+        validate_int("pulses", args.pulses, min_value=1)
+    if hasattr(args, "seed"):
+        validate_seed(args.seed)
+    if hasattr(args, "eta"):
+        validate_float("eta", args.eta, min_value=0.0, max_value=1.0)
+    if hasattr(args, "p_bg"):
+        validate_float("p-bg", args.p_bg, min_value=0.0, max_value=1.0)
 
     # Command-specific validations
     if args.cmd == "sweep":
@@ -239,6 +302,13 @@ def _validate_args(args: argparse.Namespace) -> None:
             validate_float("pe-frac", args.pe_frac, min_value=1e-9, max_value=1.0)
             if args.m_pe is not None:
                 validate_int("m-pe", args.m_pe, min_value=1)
+        validate_float("mu", args.mu, min_value=0.0)
+        validate_float("timeshift-bias", args.timeshift_bias, min_value=0.0, max_value=1.0)
+        validate_float("blinding-prob", args.blinding_prob, min_value=0.0, max_value=1.0)
+        if args.eta_z is not None:
+            validate_float("eta-z", args.eta_z, min_value=0.0, max_value=1.0)
+        if args.eta_x is not None:
+            validate_float("eta-x", args.eta_x, min_value=0.0, max_value=1.0)
     elif args.cmd == "decoy-sweep":
         validate_float("mu-s", args.mu_s, min_value=0.0)
         validate_float("mu-d", args.mu_d, min_value=0.0)
@@ -252,6 +322,14 @@ def _validate_args(args: argparse.Namespace) -> None:
         validate_int("afterpulse-window", args.afterpulse_window, min_value=0)
         validate_float("afterpulse-decay", args.afterpulse_decay, min_value=0.0)
         validate_int("dead-time-pulses", args.dead_time_pulses, min_value=0)
+        if args.eta_z is not None:
+            validate_float("eta-z", args.eta_z, min_value=0.0, max_value=1.0)
+        if args.eta_x is not None:
+            validate_float("eta-x", args.eta_x, min_value=0.0, max_value=1.0)
+    elif args.cmd == "attack-sweep":
+        validate_float("mu", args.mu, min_value=0.0)
+        validate_float("timeshift-bias", args.timeshift_bias, min_value=0.0, max_value=1.0)
+        validate_float("blinding-prob", args.blinding_prob, min_value=0.0, max_value=1.0)
         if args.eta_z is not None:
             validate_float("eta-z", args.eta_z, min_value=0.0, max_value=1.0)
         if args.eta_x is not None:
@@ -343,8 +421,15 @@ def _resolve_pass_pulse_accounting(args: argparse.Namespace, n_steps: int) -> tu
 def _run_sweep(args: argparse.Namespace) -> None:
     """Execute BB84 sweep command."""
     loss_vals = np.linspace(args.loss_min, args.loss_max, args.steps)
-    detector = DetectorParams(eta=args.eta, p_bg=args.p_bg)
+    detector = DetectorParams(eta=args.eta, p_bg=args.p_bg, eta_z=args.eta_z, eta_x=args.eta_x)
     n_sent = _resolve_n_sent_for_sweep(args)
+    attack_cfg = AttackConfig(
+        attack=args.attack,
+        mu=args.mu,
+        timeshift_bias=args.timeshift_bias,
+        blinding_mode=args.blinding_mode,
+        blinding_prob=args.blinding_prob,
+    )
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -372,23 +457,26 @@ def _run_sweep(args: argparse.Namespace) -> None:
         attack = sweep_loss_with_ci(
             loss_vals,
             flip_prob=args.flip_prob,
-            attack="intercept_resend",
+            attack=args.attack,
             n_pulses=n_sent,
             seed=args.seed + 100_000,
             n_trials=args.trials,
             detector=detector,
             n_workers=args.workers,
+            attack_config=attack_cfg,
         )
 
         # Generate CI plots
         qber_ci_path = plot_qber_vs_loss_ci(
             no_attack, attack,
-            str(outdir / "figures" / "qber_vs_loss_ci.png")
+            str(outdir / "figures" / "qber_vs_loss_ci.png"),
+            attack_label=args.attack,
         )
         # Canonical name for secret fraction CI plot
         sf_ci_path = plot_key_rate_vs_loss_ci(
             no_attack, attack,
-            str(outdir / "figures" / "secret_fraction_vs_loss_ci.png")
+            str(outdir / "figures" / "secret_fraction_vs_loss_ci.png"),
+            attack_label=args.attack,
         )
         # Legacy alias for backwards compatibility
         import shutil
@@ -402,11 +490,11 @@ def _run_sweep(args: argparse.Namespace) -> None:
             "generated_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "loss_sweep_ci": {
                 "no_attack": no_attack,
-                "intercept_resend": attack,
+                str(args.attack): attack,
             },
             "summary_stats": {
                 "no_attack": compute_summary_stats(no_attack),
-                "intercept_resend": compute_summary_stats(attack),
+                str(args.attack): compute_summary_stats(attack),
             },
             "parameters": {
                 "loss_min": args.loss_min,
@@ -419,7 +507,14 @@ def _run_sweep(args: argparse.Namespace) -> None:
                 "pass_seconds": args.pass_seconds,
                 "trials": args.trials,
                 "eta": args.eta,
+                "eta_z": detector.eta_z,
+                "eta_x": detector.eta_x,
                 "p_bg": args.p_bg,
+                "attack": args.attack,
+                "attack_mu": args.mu,
+                "timeshift_bias": args.timeshift_bias,
+                "blinding_mode": args.blinding_mode,
+                "blinding_prob": args.blinding_prob,
             },
             "artifacts": {
                 "qber_ci_plot": "qber_vs_loss_ci.png",
@@ -440,15 +535,17 @@ def _run_sweep(args: argparse.Namespace) -> None:
         attack = sweep_loss(
             loss_vals,
             flip_prob=args.flip_prob,
-            attack="intercept_resend",
+            attack=args.attack,
             n_pulses=n_sent,
             seed=args.seed + 10_000,
             detector=detector,
+            attack_config=attack_cfg,
         )
 
         q_path, k_path = plot_key_metrics_vs_loss(
             no_attack, attack,
-            str(outdir / "figures" / "key")
+            str(outdir / "figures" / "key"),
+            attack_label=args.attack,
         )
         # Legacy alias for backwards compatibility
         import shutil
@@ -461,7 +558,7 @@ def _run_sweep(args: argparse.Namespace) -> None:
             "generated_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "loss_sweep": {
                 "no_attack": no_attack,
-                "intercept_resend": attack,
+                str(args.attack): attack,
             },
             "parameters": {
                 "loss_min": args.loss_min,
@@ -473,7 +570,14 @@ def _run_sweep(args: argparse.Namespace) -> None:
                 "rep_rate": args.rep_rate,
                 "pass_seconds": args.pass_seconds,
                 "eta": args.eta,
+                "eta_z": detector.eta_z,
+                "eta_x": detector.eta_x,
                 "p_bg": args.p_bg,
+                "attack": args.attack,
+                "attack_mu": args.mu,
+                "timeshift_bias": args.timeshift_bias,
+                "blinding_mode": args.blinding_mode,
+                "blinding_prob": args.blinding_prob,
             },
             "artifacts": {
                 "qber_plot": str(Path(q_path).name),
@@ -485,6 +589,73 @@ def _run_sweep(args: argparse.Namespace) -> None:
     with open(outdir / "reports" / "latest.json", "w") as f:
         json.dump(report, f, indent=2)
         f.write("\n")  # Ensure trailing newline
+    print("Wrote:", outdir / "reports" / "latest.json")
+
+
+def _run_attack_sweep(args: argparse.Namespace) -> None:
+    """Execute attack comparison sweep."""
+    loss_vals = np.linspace(args.loss_min, args.loss_max, args.steps)
+    detector = DetectorParams(eta=args.eta, p_bg=args.p_bg, eta_z=args.eta_z, eta_x=args.eta_x)
+
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    (outdir / "figures").mkdir(exist_ok=True)
+    (outdir / "reports").mkdir(exist_ok=True)
+
+    results: Dict[str, list[dict[str, Any]]] = {}
+    for i, attack in enumerate(args.attacks):
+        attack_cfg = AttackConfig(
+            attack=attack,
+            mu=args.mu,
+            timeshift_bias=args.timeshift_bias,
+            blinding_mode=args.blinding_mode,
+            blinding_prob=args.blinding_prob,
+        )
+        records = sweep_loss(
+            loss_vals,
+            flip_prob=args.flip_prob,
+            attack=attack,
+            n_pulses=args.pulses,
+            seed=args.seed + i * 10_000,
+            detector=detector,
+            attack_config=attack_cfg,
+        )
+        results[str(attack)] = records
+
+    plot_path = plot_attack_comparison_key_rate(
+        results,
+        str(outdir / "figures" / "attack_comparison_key_rate.png"),
+    )
+    print("Plot:", plot_path)
+
+    report = {
+        "schema_version": SCHEMA_VERSION,
+        "generated_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "attack_sweep": results,
+        "parameters": {
+            "loss_min": args.loss_min,
+            "loss_max": args.loss_max,
+            "steps": args.steps,
+            "flip_prob": args.flip_prob,
+            "pulses": args.pulses,
+            "eta": args.eta,
+            "eta_z": detector.eta_z,
+            "eta_x": detector.eta_x,
+            "p_bg": args.p_bg,
+            "attacks": args.attacks,
+            "attack_mu": args.mu,
+            "timeshift_bias": args.timeshift_bias,
+            "blinding_mode": args.blinding_mode,
+            "blinding_prob": args.blinding_prob,
+        },
+        "artifacts": {
+            "attack_comparison_plot": "attack_comparison_key_rate.png",
+        },
+    }
+
+    with open(outdir / "reports" / "latest.json", "w") as f:
+        json.dump(report, f, indent=2)
+        f.write("\n")
     print("Wrote:", outdir / "reports" / "latest.json")
 
 
@@ -507,6 +678,13 @@ def _run_sweep_finite_key(
         pe_frac=args.pe_frac,
         m_pe=args.m_pe,
     )
+    attack_cfg = AttackConfig(
+        attack=args.attack,
+        mu=args.mu,
+        timeshift_bias=args.timeshift_bias,
+        blinding_mode=args.blinding_mode,
+        blinding_prob=args.blinding_prob,
+    )
 
     # Run finite-key sweep for no-attack scenario
     no_attack = sweep_loss_finite_key(
@@ -523,11 +701,12 @@ def _run_sweep_finite_key(
     attack = sweep_loss_finite_key(
         loss_vals,
         flip_prob=args.flip_prob,
-        attack="intercept_resend",
+        attack=args.attack,
         n_pulses=n_sent,
         seed=args.seed + 10_000,
         detector=detector,
         finite_key_params=fk_params,
+        attack_config=attack_cfg,
     )
 
     # Finite-key rate vs total pulses for a representative loss value
@@ -571,7 +750,7 @@ def _run_sweep_finite_key(
         "generated_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "finite_key_sweep": {
             "no_attack": no_attack,
-            "intercept_resend": attack,
+            str(args.attack): attack,
         },
         "parameters": {
             "loss_min": args.loss_min,
@@ -583,7 +762,14 @@ def _run_sweep_finite_key(
             "rep_rate": args.rep_rate,
             "pass_seconds": args.pass_seconds,
             "eta": args.eta,
+            "eta_z": detector.eta_z,
+            "eta_x": detector.eta_x,
             "p_bg": args.p_bg,
+            "attack": args.attack,
+            "attack_mu": args.mu,
+            "timeshift_bias": args.timeshift_bias,
+            "blinding_mode": args.blinding_mode,
+            "blinding_prob": args.blinding_prob,
             "finite_key": True,
             "eps_pe": args.eps_pe,
             "eps_sec": args.eps_sec,

@@ -94,6 +94,19 @@ key_rate_per_pulse = (n_sifted / n_sent) × secret_fraction
 - Computes asymptotic key rate using standard decoy-state bounds
 - Demonstrates PNS attack resilience (motivation for real satellite QKD)
 
+**Attack Surfaces (Toy Models)** — The `sweep` and `attack-sweep` commands can compare
+educational attack models beyond intercept-resend:
+- `pns`: Photon-number-splitting (reduces secrecy without adding QBER)
+- `time_shift`: Exploits basis-dependent efficiency mismatch
+- `blinding`: Forces clicks with loud/stealth modes
+
+Example comparison sweep:
+```bash
+./py -m sat_qkd_lab.run attack-sweep --attacks none intercept_resend pns \
+  --loss-min 20 --loss-max 55 --steps 8 --pulses 50000 --outdir .
+```
+This writes `figures/attack_comparison_key_rate.png`.
+
 **Link Budget** — The `link_budget.py` module is an **Option A scenario generator** that maps elevation angles to loss values for demonstration. It is *not* a physically accurate optical link model. See `optical_link.py` for documentation of what a proper Option B model would require.
 
 **Input Validation** — CLI arguments are validated post-parse with clear error messages:

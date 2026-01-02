@@ -28,6 +28,7 @@ def plot_key_metrics_vs_loss(
     records_no_attack: Sequence[Dict[str, Any]],
     records_attack: Sequence[Dict[str, Any]],
     out_prefix: str,
+    attack_label: Optional[str] = None,
 ) -> Tuple[str, str]:
     """
     Plot QBER and secret fraction vs loss for BB84 with and without attack.
@@ -57,7 +58,10 @@ def plot_key_metrics_vs_loss(
     plt.plot(loss, q_ev, label="QBER (intercept-resend)")
     plt.xlabel("Channel loss (dB)")
     plt.ylabel("QBER")
-    plt.title("QBER vs loss (BB84)")
+    if attack_label and attack_label != "none":
+        plt.title(f"QBER vs loss (BB84, attack={attack_label})")
+    else:
+        plt.title("QBER vs loss (BB84)")
     plt.legend()
     q_path = f"{out_prefix}_qber_vs_loss.png"
     plt.savefig(q_path, dpi=200, bbox_inches="tight")
@@ -68,7 +72,10 @@ def plot_key_metrics_vs_loss(
     plt.plot(loss, sf_ev, label="Secret fraction (intercept-resend)")
     plt.xlabel("Channel loss (dB)")
     plt.ylabel("Asymptotic secret fraction")
-    plt.title("Secret fraction vs loss (BB84)")
+    if attack_label and attack_label != "none":
+        plt.title(f"Secret fraction vs loss (BB84, attack={attack_label})")
+    else:
+        plt.title("Secret fraction vs loss (BB84)")
     plt.legend()
     # Canonical filename (cleaner than legacy key_key_fraction_vs_loss.png)
     k_path = f"{out_prefix}_fraction_vs_loss.png"
@@ -84,6 +91,7 @@ def plot_qber_vs_loss_ci(
     records_no_attack: Sequence[Dict[str, Any]],
     records_attack: Sequence[Dict[str, Any]],
     out_path: str,
+    attack_label: Optional[str] = None,
 ) -> str:
     """
     Plot QBER vs loss with 95% confidence interval bands.
@@ -126,7 +134,10 @@ def plot_qber_vs_loss_ci(
 
     ax.set_xlabel("Channel loss (dB)")
     ax.set_ylabel("QBER")
-    ax.set_title("QBER vs loss with 95% CI (BB84)")
+    if attack_label and attack_label != "none":
+        ax.set_title(f"QBER vs loss with 95% CI (BB84, attack={attack_label})")
+    else:
+        ax.set_title("QBER vs loss with 95% CI (BB84)")
     ax.legend()
     ax.set_ylim(bottom=0)
 
@@ -140,6 +151,7 @@ def plot_key_rate_vs_loss_ci(
     records_no_attack: Sequence[Dict[str, Any]],
     records_attack: Sequence[Dict[str, Any]],
     out_path: str,
+    attack_label: Optional[str] = None,
 ) -> str:
     """
     Plot secret fraction vs loss with 95% confidence interval bands.
@@ -182,7 +194,10 @@ def plot_key_rate_vs_loss_ci(
 
     ax.set_xlabel("Channel loss (dB)")
     ax.set_ylabel("Asymptotic secret fraction")
-    ax.set_title("Secret fraction vs loss with 95% CI (BB84)")
+    if attack_label and attack_label != "none":
+        ax.set_title(f"Secret fraction vs loss with 95% CI (BB84, attack={attack_label})")
+    else:
+        ax.set_title("Secret fraction vs loss with 95% CI (BB84)")
     ax.legend()
     ax.set_ylim(0, 1.05)
 
@@ -308,6 +323,58 @@ def plot_decoy_key_rate_vs_loss_comparison(
     combined = list(key_base) + list(key_real)
     scale, scale_params = _key_rate_scale_settings(combined)
 
+    if scale == "log":
+        ax.set_yscale("log")
+        ax.set_ylim(bottom=scale_params["bottom"])
+    elif scale == "symlog":
+        ax.set_yscale("symlog",
+                      linthresh=scale_params["linthresh"],
+                      linscale=scale_params["linscale"])
+        ax.set_ylim(bottom=scale_params["bottom"])
+    else:
+        ax.set_yscale("linear")
+        ax.set_ylim(bottom=scale_params["bottom"])
+
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+
+    return out_path
+
+
+def plot_attack_comparison_key_rate(
+    records_by_attack: Dict[str, Sequence[Dict[str, Any]]],
+    out_path: str,
+) -> str:
+    """
+    Plot key rate vs loss for multiple attack modes.
+
+    Parameters
+    ----------
+    records_by_attack : Dict[str, Sequence[Dict[str, Any]]]
+        Mapping of attack name to sweep records.
+    out_path : str
+        Output path for the plot.
+
+    Returns
+    -------
+    str
+        Path to the saved plot.
+    """
+    fig, ax = plt.subplots()
+
+    combined_rates: list[float] = []
+    for attack_name, records in records_by_attack.items():
+        loss = _extract(records, "loss_db")
+        key_rate = _extract(records, "key_rate_per_pulse")
+        ax.plot(loss, key_rate, marker="o", markersize=3, label=attack_name)
+        combined_rates.extend(list(key_rate))
+
+    ax.set_xlabel("Channel loss (dB)")
+    ax.set_ylabel("Asymptotic key rate (per pulse)")
+    ax.set_title("BB84: Key Rate vs Loss (Attack Comparison)")
+    ax.legend()
+
+    scale, scale_params = _key_rate_scale_settings(combined_rates)
     if scale == "log":
         ax.set_yscale("log")
         ax.set_ylim(bottom=scale_params["bottom"])
