@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from sat_qkd_lab.run import _resolve_pass_pulse_accounting
 
 
@@ -20,9 +22,9 @@ def test_pass_pulses_total_is_monotone_with_n_sent() -> None:
     low = _resolve_pass_pulse_accounting(_args(n_sent=100), n_steps)
     high = _resolve_pass_pulse_accounting(_args(n_sent=101), n_steps)
 
-    assert low[1] == 100
-    assert high[1] == 101
-    assert high[0] >= low[0]
+    assert sum(low[0]) == 100
+    assert sum(high[0]) == 101
+    assert max(high[0]) >= max(low[0])
 
 
 def test_pass_rep_rate_matches_explicit_n_sent() -> None:
@@ -38,10 +40,16 @@ def test_pass_rep_rate_matches_explicit_n_sent() -> None:
 
 def test_pass_pulses_is_total_not_per_step() -> None:
     n_steps = 10
-    pulses_per_step, total_sent = _resolve_pass_pulse_accounting(
+    pulses_schedule, total_sent = _resolve_pass_pulse_accounting(
         _args(pulses=100),
         n_steps,
     )
 
     assert total_sent == 100
-    assert pulses_per_step == 10
+    assert sum(pulses_schedule) == 100
+    assert max(pulses_schedule) == 10
+
+
+def test_pass_pulses_rejects_more_steps_than_total() -> None:
+    with pytest.raises(ValueError, match="increase total pulses or decrease --time-step"):
+        _resolve_pass_pulse_accounting(_args(pulses=5), 10)

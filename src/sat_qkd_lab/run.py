@@ -133,7 +133,7 @@ def main() -> None:
     ps_pulses.add_argument("--n-sent", type=int, default=None,
                            help="Total pulses sent over the pass (highest precedence)")
     ps_pulses.add_argument("--rep-rate", type=float, default=None,
-                           help="Pulse repetition rate in Hz (total = rep_rate * pass_duration)")
+                           help="Pulse repetition rate in Hz (total = rate * duration)")
     ps.add_argument("--seed", type=int, default=0,
                     help="Random seed for reproducibility (default: 0)")
     ps.add_argument("--outdir", type=str, default=".",
@@ -249,6 +249,24 @@ def _validate_args(args: argparse.Namespace) -> None:
             validate_int("n-sent", args.n_sent, min_value=1)
         if args.rep_rate is not None:
             validate_float("rep-rate", args.rep_rate, min_value=1e-9)
+        time_s, _ = generate_elevation_profile(
+            max_elevation_deg=args.max_elevation,
+            min_elevation_deg=args.min_elevation,
+            time_step_s=args.time_step,
+            pass_duration_s=args.pass_duration,
+        )
+        n_steps = len(time_s)
+        if args.n_sent is not None:
+            total_sent = args.n_sent
+        elif args.rep_rate is not None:
+            total_sent = int(round(args.rep_rate * args.pass_duration))
+        else:
+            total_sent = args.pulses
+        if total_sent < n_steps:
+            raise ValueError(
+                "Total pulses must be >= number of time steps; "
+                "increase total pulses or decrease --time-step."
+            )
 
 
 def _resolve_n_sent_for_sweep(args: argparse.Namespace) -> int:
@@ -265,8 +283,8 @@ def _resolve_n_sent_for_sweep(args: argparse.Namespace) -> int:
     return n_sent
 
 
-def _resolve_pass_pulse_accounting(args: argparse.Namespace, n_steps: int) -> tuple[int, int]:
-    """Resolve pulses per step and total pulses for pass-sweep.
+def _resolve_pass_pulse_accounting(args: argparse.Namespace, n_steps: int) -> tuple[list[int], int]:
+    """Resolve per-step pulse schedule and total pulses for pass-sweep.
 
     Precedence: --n-sent, then --rep-rate, then --pulses.
     """
@@ -281,8 +299,16 @@ def _resolve_pass_pulse_accounting(args: argparse.Namespace, n_steps: int) -> tu
     if total_sent <= 0:
         raise ValueError("Pulse accounting must yield positive values.")
 
-    steps = max(1, n_steps)
-    pulses_per_step = max(1, math.ceil(total_sent / steps))
+    if n_steps <= 0:
+        raise ValueError("n_steps must be positive for pass pulse accounting.")
+    if total_sent < n_steps:
+        raise ValueError(
+            "Total pulses must be >= number of time steps; "
+            "increase total pulses or decrease --time-step."
+        )
+    base = total_sent // n_steps
+    remainder = total_sent % n_steps
+    pulses_per_step = [base + 1] * remainder + [base] * (n_steps - remainder)
 
     return pulses_per_step, total_sent
 
@@ -677,7 +703,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         pass_duration_s=args.pass_duration,
     )
 
-    pulses_per_step, total_sent = _resolve_pass_pulse_accounting(args, len(time_s))
+    pulses_schedule, total_sent = _resolve_pass_pulse_accounting(args, len(time_s))
 
     print(f"Simulating pass sweep: {len(time_s)} time points, "
           f"elevation {args.min_elevation:.1f}° to {args.max_elevation:.1f}°")
@@ -689,7 +715,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         time_s_values=time_s,
         flip_prob=args.flip_prob,
         attack="none",
-        n_pulses=pulses_per_step,
+        n_pulses_per_step=pulses_schedule,
         seed=args.seed,
         detector=detector,
         link_params=link_params,
@@ -734,7 +760,8 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
             "pass_duration_s": args.pass_duration,
             "time_step_s": args.time_step,
             "flip_prob": args.flip_prob,
-            "pulses": pulses_per_step,
+            "pulses": total_sent,
+            "pulses_per_step": pulses_schedule,
             "n_sent_total": total_sent,
             "rep_rate": args.rep_rate,
             "eta": args.eta,

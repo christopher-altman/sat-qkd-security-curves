@@ -566,6 +566,7 @@ def sweep_pass(
     flip_prob: float = 0.0,
     attack: Attack = "none",
     n_pulses: int = 200_000,
+    n_pulses_per_step: Optional[Sequence[int]] = None,
     seed: int = 0,
     detector: Optional[DetectorParams] = None,
     link_params: Optional[FreeSpaceLinkParams] = None,
@@ -589,6 +590,8 @@ def sweep_pass(
         Attack type.
     n_pulses : int
         Number of pulses per time step.
+    n_pulses_per_step : Sequence[int], optional
+        Explicit pulse schedule per time step (overrides n_pulses when provided).
     seed : int
         Random seed.
     detector : DetectorParams, optional
@@ -609,7 +612,17 @@ def sweep_pass(
     rng = np.random.default_rng(seed)
     out: List[Dict[str, Any]] = []
 
+    if n_pulses_per_step is not None:
+        if len(n_pulses_per_step) != len(elevation_deg_values):
+            raise ValueError("n_pulses_per_step length must match elevation values.")
+
     for i, (el, t) in enumerate(zip(elevation_deg_values, time_s_values)):
+        if n_pulses_per_step is not None:
+            n_pulses_step = int(n_pulses_per_step[i])
+            if n_pulses_step < 0:
+                raise ValueError("n_pulses_per_step must be non-negative.")
+        else:
+            n_pulses_step = n_pulses
         el_f = float(el)
         t_f = float(t)
 
@@ -629,7 +642,7 @@ def sweep_pass(
 
         # Run BB84 simulation
         s = simulate_bb84(
-            n_pulses=n_pulses,
+            n_pulses=n_pulses_step,
             loss_db=loss_db,
             flip_prob=flip_prob,
             attack=attack,
