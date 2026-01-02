@@ -73,7 +73,7 @@ Translates physics-level behavior (loss/noise/attack) into operational metrics (
 
 5. Gisin, N., Ribordy, G., Tittel, W., & Zbinden, H. (2002). **Quantum cryptography.** *Reviews of Modern Physics*, *74*(1), 145–195. https://doi.org/10.1103/RevModPhys.74.145
 
-6. Altman, C., Wiliams, C., Ursin, R., Villoresi, P., Sharma, V. **Astronaut Development and Deployment of a Secure Space Communications Network,** NASA NIAC/OCT; DARPA QUINESS (Macroscopic Quantum Communications).
+6. Altman, C., Wiliams, C., Ursin, R., Villoresi, P., Sharma, V. **Astronaut Development and Deployment of a Secure Space Communications Network,** NASA NIAC/OCT; DARPA QUINESS (Macroscopic Quantum Communications). [Drive link](https://drive.google.com/file/d/0B99KWApna6GoX3JzZGMzbzNrMjg/view?resourcekey=0-b1lf7VUq8QmpRriVN5N2sw)
 
 ## Citations
 
@@ -95,8 +95,8 @@ MIT License. See [LICENSE](LICENSE) for details.
 ## Contact
 
 - **Website:** [christopheraltman.com](https://christopheraltman.com)
-- **Research portfolio:** https://lab.christopheraltman.com/
-- **Portfolio mirror:** https://christopher-altman.github.io/
+- **Research portfolio:** [lab.christopheraltman.com](https://lab.christopheraltman.com/)
+- **Portfolio mirror:** [christopher-altman.github.io](https://christopher-altman.github.io/)
 - **GitHub:** [github.com/christopher-altman](https://github.com/christopher-altman)
 - **Google Scholar:** [scholar.google.com/citations?user=tvwpCcgAAAAJ](https://scholar.google.com/citations?user=tvwpCcgAAAAJ)
 - **Email:** x@christopheraltman.com
