@@ -23,27 +23,27 @@ If we model (i) channel loss in dB, (ii) intrinsic measurement noise, and (iii) 
 
 ## Method
 
-    •   Where signal comes from: Monte Carlo simulation of BB84 prepare-and-measure, basis sifting, parameter estimation, and secret-fraction calculation.
-    •   Why this architecture/data was chosen: BB84 is the canonical QKD protocol; intercept–resend is the simplest attack with a visible QBER signature; dB loss is the lingua franca of link budgets (fibre and free-space).
-    •   What is being experimentally compared:
+- Where signal comes from: Monte Carlo simulation of BB84 prepare-and-measure, basis sifting, parameter estimation, and secret-fraction calculation.
+- Why this architecture/data was chosen: BB84 is the canonical QKD protocol; intercept–resend is the simplest attack with a visible QBER signature; dB loss is the lingua franca of link budgets (fibre and free-space).
+- What is being experimentally compared:
         - no attack vs intercept–resend
         - sweeps over loss_db and intrinsic flip_prob
         - optional “toy satellite pass” mapping elevation angle → loss_db
 
 ## Implementation
 
-    •   Python package under /src/sat_qkd_lab
-    •   CLI:
+- Python package under /src/sat_qkd_lab
+- CLI:
         - python -m sat_qkd_lab.run sweep --help
-    •   Requirements: pyproject.toml (numpy, matplotlib)
+- Requirements: pyproject.toml (numpy, matplotlib)
 
 ## Results
 
 The model generates:
 
-    •   figures/key_rate_vs_loss.png
-    •   figures/qber_vs_loss.png
-    •   reports/latest.json (raw sweep metrics)
+- figures/key_rate_vs_loss.png
+- figures/qber_vs_loss.png
+- reports/latest.json (raw sweep metrics)
 
 ## Interpretation
 
