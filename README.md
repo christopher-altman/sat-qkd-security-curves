@@ -17,6 +17,8 @@
   <img alt="Secret key rate and QBER vs channel loss" src="figures/hero_light.png" width="920">
 </picture>
 
+<br>
+
 *Featured result: secret-key rate and QBER vs channel loss (no-attack vs intercept–resend).*
 
 **Figure 1. Estimated secret-key rate versus channel loss for BB84.**  
