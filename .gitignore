@@ -34,3 +34,6 @@ coverage.xml
 *.swo
 *~
 .DS_Store
+
+# Generated run outputs
+runs/
