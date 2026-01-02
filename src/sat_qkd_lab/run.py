@@ -5,15 +5,19 @@ from datetime import datetime, timezone
 import numpy as np
 from pathlib import Path
 
-SCHEMA_VERSION = "0.2"
+SCHEMA_VERSION = "0.3"
 
 from .helpers import validate_int, validate_float, validate_seed
-from .sweep import sweep_loss, sweep_loss_with_ci, compute_summary_stats
+from .finite_key import FiniteKeyParams
+from .sweep import sweep_loss, sweep_loss_with_ci, sweep_loss_finite_key, compute_summary_stats
 from .plotting import (
     plot_key_metrics_vs_loss,
     plot_qber_vs_loss_ci,
     plot_key_rate_vs_loss_ci,
     plot_decoy_key_rate_vs_loss,
+    plot_finite_key_comparison,
+    plot_finite_key_bits_vs_loss,
+    plot_finite_size_penalty,
 )
 from .detector import DetectorParams, DEFAULT_DETECTOR
 from .decoy_bb84 import DecoyParams, sweep_decoy_loss
@@ -42,6 +46,17 @@ def main() -> None:
                    help="Number of trials per loss value (>1 enables CI)")
     s.add_argument("--workers", type=int, default=1,
                    help="Number of parallel workers")
+    # Finite-key analysis parameters
+    s.add_argument("--finite-key", action="store_true",
+                   help="Enable finite-key analysis mode")
+    s.add_argument("--eps-pe", type=float, default=1e-10,
+                   help="Parameter estimation failure probability")
+    s.add_argument("--eps-sec", type=float, default=1e-10,
+                   help="Secrecy failure probability")
+    s.add_argument("--eps-cor", type=float, default=1e-15,
+                   help="Correctness failure probability")
+    s.add_argument("--ec-efficiency", type=float, default=1.16,
+                   help="Error correction efficiency (>= 1.0)")
 
     # --- decoy-sweep command ---
     d = sub.add_parser("decoy-sweep", help="Decoy-state BB84 sweep over loss.")
@@ -102,6 +117,12 @@ def _validate_args(args: argparse.Namespace) -> None:
     # Command-specific validations
     if args.cmd == "sweep":
         validate_int("workers", args.workers, min_value=1)
+        # Finite-key parameter validation
+        if hasattr(args, "finite_key") and args.finite_key:
+            validate_float("eps-pe", args.eps_pe, min_value=0.0, max_value=1.0)
+            validate_float("eps-sec", args.eps_sec, min_value=0.0, max_value=1.0)
+            validate_float("eps-cor", args.eps_cor, min_value=0.0, max_value=1.0)
+            validate_float("ec-efficiency", args.ec_efficiency, min_value=1.0)
     elif args.cmd == "decoy-sweep":
         validate_float("mu-s", args.mu_s, min_value=0.0)
         validate_float("mu-d", args.mu_d, min_value=0.0)
@@ -120,6 +141,11 @@ def _run_sweep(args: argparse.Namespace) -> None:
     outdir.mkdir(parents=True, exist_ok=True)
     (outdir / "figures").mkdir(exist_ok=True)
     (outdir / "reports").mkdir(exist_ok=True)
+
+    # Check for finite-key mode
+    if getattr(args, "finite_key", False):
+        _run_sweep_finite_key(args, loss_vals, detector, outdir)
+        return
 
     if args.trials > 1:
         # Run with Monte Carlo CI
@@ -244,6 +270,95 @@ def _run_sweep(args: argparse.Namespace) -> None:
     with open(outdir / "reports" / "latest.json", "w") as f:
         json.dump(report, f, indent=2)
         f.write("\n")  # Ensure trailing newline
+    print("Wrote:", outdir / "reports" / "latest.json")
+
+
+def _run_sweep_finite_key(
+    args: argparse.Namespace,
+    loss_vals: np.ndarray,
+    detector: DetectorParams,
+    outdir: Path,
+) -> None:
+    """Execute BB84 sweep with finite-key analysis."""
+    print("Running finite-key analysis sweep...")
+
+    fk_params = FiniteKeyParams(
+        eps_pe=args.eps_pe,
+        eps_sec=args.eps_sec,
+        eps_cor=args.eps_cor,
+        ec_efficiency=args.ec_efficiency,
+    )
+
+    # Run finite-key sweep for no-attack scenario
+    no_attack = sweep_loss_finite_key(
+        loss_vals,
+        flip_prob=args.flip_prob,
+        attack="none",
+        n_pulses=args.pulses,
+        seed=args.seed,
+        detector=detector,
+        finite_key_params=fk_params,
+    )
+
+    # Run finite-key sweep for attack scenario
+    attack = sweep_loss_finite_key(
+        loss_vals,
+        flip_prob=args.flip_prob,
+        attack="intercept_resend",
+        n_pulses=args.pulses,
+        seed=args.seed + 10_000,
+        detector=detector,
+        finite_key_params=fk_params,
+    )
+
+    # Generate finite-key plots
+    comparison_path = plot_finite_key_comparison(
+        no_attack,
+        str(outdir / "figures" / "finite_key_comparison.png"),
+    )
+    bits_path = plot_finite_key_bits_vs_loss(
+        no_attack,
+        str(outdir / "figures" / "finite_key_bits_vs_loss.png"),
+    )
+    penalty_path = plot_finite_size_penalty(
+        no_attack,
+        str(outdir / "figures" / "finite_size_penalty.png"),
+    )
+    print("Finite-key plots:", comparison_path, bits_path, penalty_path)
+
+    # Build report with finite-key data
+    report = {
+        "schema_version": SCHEMA_VERSION,
+        "generated_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "finite_key_sweep": {
+            "no_attack": no_attack,
+            "intercept_resend": attack,
+        },
+        "parameters": {
+            "loss_min": args.loss_min,
+            "loss_max": args.loss_max,
+            "steps": args.steps,
+            "flip_prob": args.flip_prob,
+            "pulses": args.pulses,
+            "eta": args.eta,
+            "p_bg": args.p_bg,
+            "finite_key": True,
+            "eps_pe": args.eps_pe,
+            "eps_sec": args.eps_sec,
+            "eps_cor": args.eps_cor,
+            "eps_total": fk_params.eps_total,
+            "ec_efficiency": args.ec_efficiency,
+        },
+        "artifacts": {
+            "finite_key_comparison_plot": "finite_key_comparison.png",
+            "finite_key_bits_plot": "finite_key_bits_vs_loss.png",
+            "finite_size_penalty_plot": "finite_size_penalty.png",
+        },
+    }
+
+    with open(outdir / "reports" / "latest.json", "w") as f:
+        json.dump(report, f, indent=2)
+        f.write("\n")
     print("Wrote:", outdir / "reports" / "latest.json")
 
 

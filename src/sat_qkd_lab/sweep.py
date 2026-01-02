@@ -5,6 +5,7 @@ import numpy as np
 from .bb84 import simulate_bb84, Attack
 from .link_budget import SatLinkParams, total_channel_loss_db
 from .detector import DetectorParams, DEFAULT_DETECTOR
+from .finite_key import FiniteKeyParams, finite_key_rate_per_pulse, compare_asymptotic_vs_finite
 
 
 def sweep_loss(
@@ -288,6 +289,124 @@ def sweep_loss_with_ci(
             "n_secret_est_mean": float(np.mean(secrets)),
             "abort_rate": abort_rate,
             "nonabort_rate": nonabort_rate,
+        })
+
+    return out
+
+
+def sweep_loss_finite_key(
+    loss_db_values: Sequence[float],
+    flip_prob: float = 0.0,
+    attack: Attack = "none",
+    n_pulses: int = 200_000,
+    seed: int = 0,
+    detector: Optional[DetectorParams] = None,
+    finite_key_params: Optional[FiniteKeyParams] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Sweep over loss values with finite-key analysis.
+
+    Runs BB84 simulation and computes finite-key secret key length
+    using Hoeffding bounds for parameter estimation.
+
+    Parameters
+    ----------
+    loss_db_values : Sequence[float]
+        Channel loss values in dB.
+    flip_prob : float
+        Intrinsic bit-flip probability.
+    attack : Attack
+        Attack type ("none" or "intercept_resend").
+    n_pulses : int
+        Number of pulses per simulation.
+    seed : int
+        Base random seed.
+    detector : DetectorParams, optional
+        Detector model parameters.
+    finite_key_params : FiniteKeyParams, optional
+        Finite-key security parameters.
+
+    Returns
+    -------
+    List[Dict[str, Any]]
+        List of result dictionaries with both asymptotic and finite-key metrics.
+    """
+    det = detector if detector is not None else DEFAULT_DETECTOR
+    fk_params = finite_key_params if finite_key_params is not None else FiniteKeyParams()
+    out: List[Dict[str, Any]] = []
+
+    for i, loss_db in enumerate(loss_db_values):
+        s = simulate_bb84(
+            n_pulses=n_pulses,
+            loss_db=float(loss_db),
+            flip_prob=float(flip_prob),
+            attack=attack,
+            seed=seed + i,
+            detector=det,
+        )
+
+        # Compute finite-key analysis
+        # If BB84 aborted, propagate abort to finite-key (no key extractable)
+        if s.aborted:
+            fk_result = {
+                "qber_hat": s.qber,
+                "qber_upper": 1.0,  # Worst case
+                "qber_lower": 0.0,
+                "n_sifted": s.n_sifted,
+                "l_secret_bits": 0,
+                "key_rate_per_pulse": 0.0,
+                "key_rate_per_sifted": 0.0,
+                "aborted": True,
+                "leak_ec_bits": 0.0,
+                "privacy_amplification_cost": 0.0,
+            }
+        else:
+            n_errors = int(round(s.qber * s.n_sifted)) if s.n_sifted > 0 else 0
+            fk_result = finite_key_rate_per_pulse(
+                n_sent=s.n_sent,
+                n_sifted=s.n_sifted,
+                n_errors=n_errors,
+                params=fk_params,
+            )
+
+        # Compare asymptotic vs finite
+        comparison = compare_asymptotic_vs_finite(
+            n_sent=s.n_sent,
+            n_sifted=s.n_sifted,
+            qber_observed=s.qber if not s.aborted else 0.5,
+            params=fk_params,
+        )
+
+        out.append({
+            "loss_db": float(loss_db),
+            "flip_prob": float(flip_prob),
+            "attack": str(attack),
+            "n_sent": s.n_sent,
+            "n_received": s.n_received,
+            "n_sifted": s.n_sifted,
+            # Asymptotic results
+            "qber": s.qber,
+            "secret_fraction": s.secret_fraction,
+            "key_rate_per_pulse_asymptotic": s.key_rate_per_pulse,
+            "n_secret_est_asymptotic": s.n_secret_est,
+            "aborted": bool(s.aborted),
+            # Finite-key results
+            "qber_upper": fk_result["qber_upper"],
+            "l_secret_bits": fk_result["l_secret_bits"],
+            "key_rate_per_pulse_finite": fk_result["key_rate_per_pulse"],
+            "leak_ec_bits": fk_result["leak_ec_bits"],
+            "privacy_amplification_cost": fk_result["privacy_amplification_cost"],
+            "finite_key_aborted": fk_result["aborted"],
+            # Comparison metrics
+            "asymptotic_rate": comparison["asymptotic_rate"],
+            "finite_rate": comparison["finite_rate"],
+            "finite_size_penalty": comparison["penalty_factor"],
+            # Security parameters used
+            "eps_pe": fk_params.eps_pe,
+            "eps_sec": fk_params.eps_sec,
+            "eps_cor": fk_params.eps_cor,
+            "eps_total": fk_params.eps_total,
+            "ec_efficiency": fk_params.ec_efficiency,
         })
 
     return out

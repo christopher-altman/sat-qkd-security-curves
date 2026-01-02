@@ -240,6 +240,122 @@ def plot_decoy_key_rate_vs_loss(
     return out_path
 
 
+# --- Finite-Key Plotting ---
+
+def plot_finite_key_comparison(
+    records: Sequence[Dict[str, Any]],
+    out_path: str,
+) -> str:
+    """
+    Plot asymptotic vs finite-key rate comparison.
+
+    Parameters
+    ----------
+    records : Sequence[Dict[str, Any]]
+        Finite-key sweep results.
+    out_path : str
+        Output path for the plot.
+
+    Returns
+    -------
+    str
+        Path to the saved plot.
+    """
+    loss = _extract(records, "loss_db")
+    asymp_rate = _extract(records, "asymptotic_rate")
+    finite_rate = _extract(records, "finite_rate")
+
+    fig, ax = plt.subplots()
+
+    ax.plot(loss, asymp_rate, label="Asymptotic rate", linestyle="--")
+    ax.plot(loss, finite_rate, label="Finite-key rate", linestyle="-")
+
+    ax.set_xlabel("Channel loss (dB)")
+    ax.set_ylabel("Key rate (per pulse)")
+    ax.set_title("Asymptotic vs Finite-Key Rate (BB84)")
+    ax.legend()
+    ax.set_ylim(bottom=0)
+
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+
+    return out_path
+
+
+def plot_finite_key_bits_vs_loss(
+    records: Sequence[Dict[str, Any]],
+    out_path: str,
+) -> str:
+    """
+    Plot extractable secret bits vs channel loss.
+
+    Parameters
+    ----------
+    records : Sequence[Dict[str, Any]]
+        Finite-key sweep results.
+    out_path : str
+        Output path for the plot.
+
+    Returns
+    -------
+    str
+        Path to the saved plot.
+    """
+    loss = _extract(records, "loss_db")
+    l_secret = _extract(records, "l_secret_bits")
+
+    fig, ax = plt.subplots()
+
+    ax.plot(loss, l_secret, marker="o", markersize=3)
+
+    ax.set_xlabel("Channel loss (dB)")
+    ax.set_ylabel("Extractable secret bits")
+    ax.set_title("Finite-Key Secret Bits vs Loss (BB84)")
+    ax.set_ylim(bottom=0)
+
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+
+    return out_path
+
+
+def plot_finite_size_penalty(
+    records: Sequence[Dict[str, Any]],
+    out_path: str,
+) -> str:
+    """
+    Plot finite-size penalty factor vs channel loss.
+
+    Parameters
+    ----------
+    records : Sequence[Dict[str, Any]]
+        Finite-key sweep results.
+    out_path : str
+        Output path for the plot.
+
+    Returns
+    -------
+    str
+        Path to the saved plot.
+    """
+    loss = _extract(records, "loss_db")
+    penalty = _extract(records, "finite_size_penalty")
+
+    fig, ax = plt.subplots()
+
+    ax.plot(loss, penalty, marker="o", markersize=3)
+
+    ax.set_xlabel("Channel loss (dB)")
+    ax.set_ylabel("Finite-size penalty (fraction)")
+    ax.set_title("Finite-Size Penalty vs Loss (BB84)")
+    ax.set_ylim(0, 1.05)
+
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+
+    return out_path
+
+
 def plot_decoy_comparison(
     records_bb84: Sequence[Dict[str, Any]],
     records_decoy: Sequence[Dict[str, Any]],

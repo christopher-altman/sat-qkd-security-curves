@@ -8,4 +8,5 @@ __all__ = [
     "decoy_bb84",
     "optical_link",
     "helpers",
+    "finite_key",
 ]

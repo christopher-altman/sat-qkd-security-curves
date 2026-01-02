@@ -110,6 +110,22 @@ Invalid inputs raise `ValueError` with the parameter name and invalid value.
 
 This ensures aborted trials contribute zero to aggregated statistics.
 
+**Finite-Key Analysis** — The `--finite-key` flag enables finite-size security analysis using Hoeffding-type concentration bounds. This computes conservative secret key length estimates that account for statistical uncertainty in parameter estimation:
+
+- `--eps-pe`: Parameter estimation failure probability (default 1e-10)
+- `--eps-sec`: Secrecy failure probability (default 1e-10)
+- `--eps-cor`: Correctness failure probability (default 1e-15)
+- `--ec-efficiency`: Error correction efficiency factor (default 1.16)
+
+The finite-key rate is always ≤ the asymptotic rate, with the penalty decreasing as block size increases. The analysis uses:
+- Hoeffding bounds for QBER estimation uncertainty
+- Devetak-Winter formula with finite-size corrections
+- Total security parameter: `eps_total = eps_pe + eps_sec + eps_cor`
+
+References:
+- Tomamichel et al., "Tight finite-key analysis for quantum cryptography" (Nature Comm. 2012)
+- Lim et al., "Concise security bounds for practical decoy-state QKD" (PRA 2014)
+
 ### Simulator API
 
 The core simulation functions are:
@@ -129,6 +145,9 @@ Both return structured results with QBER, secret fraction, and key rate metrics.
 
 # Decoy-state BB84 sweep
 ./py -m sat_qkd_lab.run decoy-sweep --loss-min 20 --loss-max 50 --steps 16
+
+# Finite-key analysis sweep
+./py -m sat_qkd_lab.run sweep --finite-key --pulses 500000 --eps-pe 1e-10 --eps-sec 1e-10
 ```
 
 ## Results
@@ -140,6 +159,9 @@ The model generates:
 - `figures/qber_vs_loss_ci.png` — QBER with 95% CI bands (when `--trials > 1`)
 - `figures/secret_fraction_vs_loss_ci.png` — Secret fraction with 95% CI (legacy alias: `key_rate_vs_loss_ci.png`)
 - `figures/decoy_key_rate_vs_loss.png` — Decoy-state key rate vs loss
+- `figures/finite_key_comparison.png` — Asymptotic vs finite-key rate (when `--finite-key`)
+- `figures/finite_key_bits_vs_loss.png` — Extractable secret bits vs loss (when `--finite-key`)
+- `figures/finite_size_penalty.png` — Finite-size penalty factor vs loss (when `--finite-key`)
 - `reports/latest.json` — Raw sweep metrics with schema version and timestamp
 
 **Figure 1. Estimated secret-key rate versus channel loss for BB84.** ([↑ featured figure](#featured-figure))  
@@ -148,13 +170,13 @@ A Monte-Carlo sweep shows that link loss alone reduces detections but does not d
 **Figure 2. Quantum Bit Error Rate (QBER) versus channel loss for BB84.** ([↑ featured figure](#featured-figure))  
 Without attack, intrinsic measurement noise keeps QBER low across loss. An intercept–resend adversary injects a strong QBER signature, driving errors beyond the tolerable entropy budget. The plotted spikes illustrate the detectable breakage regime that classical throughput monitors would miss without explicit QBER estimation.
 
-### JSON Output Schema (v0.2)
+### JSON Output Schema (v0.3)
 
-The output JSON includes these new fields for CI sweeps:
+The output JSON includes these fields for CI sweeps:
 
 ```json
 {
-  "schema_version": "0.2",
+  "schema_version": "0.3",
   "generated_utc": "2026-01-02T...",
   "loss_sweep_ci": {
     "no_attack": [{
@@ -170,6 +192,34 @@ The output JSON includes these new fields for CI sweeps:
       "abort_rate": 0.0,
       ...
     }]
+  }
+}
+```
+
+For finite-key sweeps (`--finite-key`), the JSON includes additional fields:
+
+```json
+{
+  "schema_version": "0.3",
+  "finite_key_sweep": {
+    "no_attack": [{
+      "loss_db": 25.0,
+      "qber": 0.025,
+      "qber_upper": 0.032,
+      "l_secret_bits": 45000,
+      "key_rate_per_pulse_asymptotic": 0.0012,
+      "key_rate_per_pulse_finite": 0.0009,
+      "finite_size_penalty": 0.25,
+      "eps_total": 2.00001e-10,
+      ...
+    }]
+  },
+  "parameters": {
+    "finite_key": true,
+    "eps_pe": 1e-10,
+    "eps_sec": 1e-10,
+    "eps_cor": 1e-15,
+    "ec_efficiency": 1.16
   }
 }
 ```

@@ -899,6 +899,256 @@ def test_plot_ci_creates_canonical_filename(tmp_path):
     assert result_path.endswith("secret_fraction_vs_loss_ci.png")
 
 
+# --- Finite-Key Analysis Tests ---
+
+def test_finite_key_params_defaults():
+    """FiniteKeyParams should have sensible defaults."""
+    from sat_qkd_lab.finite_key import FiniteKeyParams
+
+    params = FiniteKeyParams()
+    assert params.eps_pe == 1e-10
+    assert params.eps_sec == 1e-10
+    assert params.eps_cor == 1e-15
+    assert params.ec_efficiency == 1.16
+    assert params.eps_total == params.eps_pe + params.eps_sec + params.eps_cor
+
+
+def test_finite_key_params_validation():
+    """FiniteKeyParams should validate parameter ranges."""
+    from sat_qkd_lab.finite_key import FiniteKeyParams
+
+    # Valid parameters
+    valid = FiniteKeyParams(eps_pe=1e-10, eps_sec=1e-10, eps_cor=1e-15, ec_efficiency=1.16)
+    assert valid.eps_pe == 1e-10
+
+    # Invalid eps_pe (out of range)
+    with pytest.raises(ValueError, match="eps_pe"):
+        FiniteKeyParams(eps_pe=0.0)
+    with pytest.raises(ValueError, match="eps_pe"):
+        FiniteKeyParams(eps_pe=1.0)
+
+    # Invalid ec_efficiency (too low)
+    with pytest.raises(ValueError, match="ec_efficiency"):
+        FiniteKeyParams(ec_efficiency=0.9)
+
+
+def test_hoeffding_bound_basic():
+    """Hoeffding bound should add uncertainty margin."""
+    from sat_qkd_lab.finite_key import hoeffding_bound
+
+    # With enough samples, bound should be close to observed
+    upper = hoeffding_bound(n_samples=100000, observed_rate=0.05, eps=1e-10)
+    assert upper > 0.05  # Upper bound should exceed observed
+    assert upper < 0.08  # But not by too much with many samples
+
+    # With few samples, bound should be wider
+    upper_few = hoeffding_bound(n_samples=100, observed_rate=0.05, eps=1e-10)
+    assert upper_few > upper  # Less data = wider bound
+
+
+def test_hoeffding_bound_edge_cases():
+    """Hoeffding bound edge cases."""
+    from sat_qkd_lab.finite_key import hoeffding_bound
+
+    # Zero samples -> worst case
+    assert hoeffding_bound(0, 0.05, 1e-10) == 1.0
+
+    # Zero tolerance -> worst case
+    assert hoeffding_bound(1000, 0.05, 0.0) == 1.0
+
+    # Upper clamped to 1.0
+    assert hoeffding_bound(10, 0.95, 1e-10) == 1.0
+
+    # Lower clamped to 0.0
+    from sat_qkd_lab.finite_key import hoeffding_lower_bound
+    assert hoeffding_lower_bound(10, 0.05, 1e-10) == 0.0
+
+
+def test_finite_key_bounds_output():
+    """finite_key_bounds should return correct structure."""
+    from sat_qkd_lab.finite_key import finite_key_bounds
+
+    result = finite_key_bounds(n_sifted=10000, n_errors=500, eps_pe=1e-10)
+
+    assert "qber_hat" in result
+    assert "qber_upper" in result
+    assert "qber_lower" in result
+    assert "n_sifted" in result
+
+    assert result["qber_hat"] == 0.05  # 500/10000
+    assert result["qber_upper"] > result["qber_hat"]
+    assert result["qber_lower"] < result["qber_hat"]
+    assert result["qber_upper"] <= 0.5  # Physical max
+
+
+def test_finite_key_secret_length_positive():
+    """finite_key_secret_length should return positive key bits for good QBER."""
+    from sat_qkd_lab.finite_key import finite_key_secret_length, FiniteKeyParams
+
+    params = FiniteKeyParams()
+    result = finite_key_secret_length(
+        n_sifted=100000,
+        qber_upper=0.03,  # Good QBER
+        params=params,
+    )
+
+    assert result["l_secret_bits"] > 0
+    assert not result["aborted"]
+    assert result["key_rate_per_sifted"] > 0
+
+
+def test_finite_key_secret_length_aborts_on_high_qber():
+    """finite_key_secret_length should abort on high QBER."""
+    from sat_qkd_lab.finite_key import finite_key_secret_length, FiniteKeyParams
+
+    params = FiniteKeyParams()
+    result = finite_key_secret_length(
+        n_sifted=100000,
+        qber_upper=0.15,  # Above 11% threshold
+        params=params,
+    )
+
+    assert result["l_secret_bits"] == 0
+    assert result["aborted"]
+    assert result["key_rate_per_sifted"] == 0.0
+
+
+def test_finite_key_rate_per_pulse():
+    """finite_key_rate_per_pulse should combine bounds and length."""
+    from sat_qkd_lab.finite_key import finite_key_rate_per_pulse, FiniteKeyParams
+
+    params = FiniteKeyParams()
+    result = finite_key_rate_per_pulse(
+        n_sent=200000,
+        n_sifted=50000,
+        n_errors=1500,  # 3% QBER
+        params=params,
+    )
+
+    assert "qber_hat" in result
+    assert "qber_upper" in result
+    assert "l_secret_bits" in result
+    assert "key_rate_per_pulse" in result
+    assert "eps_total" in result
+
+    # Should produce positive key
+    assert result["l_secret_bits"] > 0
+    assert result["key_rate_per_pulse"] > 0
+
+
+def test_finite_rate_less_than_asymptotic():
+    """Finite-key rate should always be <= asymptotic rate."""
+    from sat_qkd_lab.finite_key import compare_asymptotic_vs_finite, FiniteKeyParams
+
+    params = FiniteKeyParams()
+
+    # Test across different QBER values
+    for qber in [0.01, 0.03, 0.05, 0.08]:
+        result = compare_asymptotic_vs_finite(
+            n_sent=200000,
+            n_sifted=50000,
+            qber_observed=qber,
+            params=params,
+        )
+
+        # Finite rate should be <= asymptotic
+        assert result["finite_rate"] <= result["asymptotic_rate"] + 1e-10, \
+            f"Finite rate ({result['finite_rate']}) > asymptotic ({result['asymptotic_rate']}) at QBER={qber}"
+
+
+def test_sweep_loss_finite_key_output():
+    """sweep_loss_finite_key should return both asymptotic and finite-key metrics."""
+    from sat_qkd_lab.sweep import sweep_loss_finite_key
+    from sat_qkd_lab.detector import DetectorParams
+    from sat_qkd_lab.finite_key import FiniteKeyParams
+
+    det = DetectorParams(eta=0.2, p_bg=0.0)
+    fk_params = FiniteKeyParams()
+
+    results = sweep_loss_finite_key(
+        [20.0, 30.0],
+        n_pulses=10000,
+        seed=42,
+        detector=det,
+        finite_key_params=fk_params,
+    )
+
+    assert len(results) == 2
+
+    for r in results:
+        # Asymptotic fields
+        assert "qber" in r
+        assert "secret_fraction" in r
+        assert "key_rate_per_pulse_asymptotic" in r
+
+        # Finite-key fields
+        assert "qber_upper" in r
+        assert "l_secret_bits" in r
+        assert "key_rate_per_pulse_finite" in r
+        assert "finite_size_penalty" in r
+        assert "eps_total" in r
+
+
+def test_finite_key_with_attack_aborts():
+    """Finite-key sweep with attack should produce aborted results."""
+    from sat_qkd_lab.sweep import sweep_loss_finite_key
+    from sat_qkd_lab.detector import DetectorParams
+    from sat_qkd_lab.finite_key import FiniteKeyParams
+
+    det = DetectorParams(eta=1.0, p_bg=0.0)
+    fk_params = FiniteKeyParams()
+
+    results = sweep_loss_finite_key(
+        [10.0],  # Low loss for stable QBER
+        attack="intercept_resend",
+        n_pulses=50000,
+        seed=42,
+        detector=det,
+        finite_key_params=fk_params,
+    )
+
+    # Intercept-resend should cause abort (QBER ~25% > 11%)
+    assert len(results) == 1
+    assert results[0]["aborted"]  # BB84 protocol abort
+    assert results[0]["finite_key_aborted"]  # Finite-key abort (QBER too high)
+    assert results[0]["l_secret_bits"] == 0
+
+
+def test_finite_key_plot_functions_exist():
+    """Finite-key plot functions should be importable."""
+    from sat_qkd_lab.plotting import (
+        plot_finite_key_comparison,
+        plot_finite_key_bits_vs_loss,
+        plot_finite_size_penalty,
+    )
+
+    # Just check they're callable
+    assert callable(plot_finite_key_comparison)
+    assert callable(plot_finite_key_bits_vs_loss)
+    assert callable(plot_finite_size_penalty)
+
+
+def test_finite_key_plot_creates_file(tmp_path):
+    """Finite-key plot functions should create output files."""
+    from sat_qkd_lab.plotting import plot_finite_key_comparison, plot_finite_key_bits_vs_loss
+    from pathlib import Path
+
+    records = [
+        {"loss_db": 20.0, "asymptotic_rate": 0.001, "finite_rate": 0.0008,
+         "l_secret_bits": 800, "finite_size_penalty": 0.2},
+        {"loss_db": 30.0, "asymptotic_rate": 0.0005, "finite_rate": 0.0003,
+         "l_secret_bits": 300, "finite_size_penalty": 0.4},
+    ]
+
+    comp_path = str(tmp_path / "finite_key_comparison.png")
+    result = plot_finite_key_comparison(records, comp_path)
+    assert Path(result).exists()
+
+    bits_path = str(tmp_path / "finite_key_bits.png")
+    result2 = plot_finite_key_bits_vs_loss(records, bits_path)
+    assert Path(result2).exists()
+
+
 # Keep the original sanity test for backwards compatibility
 def test_sanity():
     assert True
