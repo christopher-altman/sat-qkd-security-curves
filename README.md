@@ -12,11 +12,15 @@
 [![Website](https://img.shields.io/badge/website-christopheraltman.com-green)](https://www.christopheraltman.com)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Altman-blue?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/Altman)
 
+<br>
+<br>
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="figures/hero_dark.png">
   <img alt="Secret key rate and QBER vs channel loss" src="figures/hero_light.png" width="920">
 </picture>
 
+<br>
 <br>
 
 *Featured result: secret-key rate and QBER vs channel loss (no-attack vs intercept–resend).*
