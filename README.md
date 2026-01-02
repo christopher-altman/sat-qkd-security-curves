@@ -195,6 +195,12 @@ Both return structured results with QBER, secret fraction, and key rate metrics.
 # Decoy-state BB84 sweep
 ./py -m sat_qkd_lab.run decoy-sweep --loss-min 20 --loss-max 50 --steps 16
 
+# Decoy realism: intensity noise + afterpulsing + dead time + eta mismatch
+./py -m sat_qkd_lab.run decoy-sweep --loss-min 20 --loss-max 50 --steps 16 \
+  --mu-sigma 0.02 --decoy-mu-sigma 0.01 \
+  --afterpulse-prob 0.02 --afterpulse-window 3 \
+  --dead-time-pulses 5 --eta-z 0.22 --eta-x 0.18
+
 # Finite-key analysis sweep
 ./py -m sat_qkd_lab.run sweep --finite-key --pulses 500000 --eps-pe 1e-10 --eps-sec 1e-10
 
@@ -217,6 +223,7 @@ The model generates:
 - `figures/qber_vs_loss_ci.png` — QBER with 95% CI bands (when `--trials > 1`)
 - `figures/secret_fraction_vs_loss_ci.png` — Secret fraction with 95% CI (legacy alias: `key_rate_vs_loss_ci.png`)
 - `figures/decoy_key_rate_vs_loss.png` — Decoy-state key rate vs loss
+- `figures/decoy_key_rate_vs_loss_realism.png` — Decoy key rate vs loss with realism enabled
 - `figures/finite_key_comparison.png` — Asymptotic vs finite-key rate (when `--finite-key`)
 - `figures/finite_key_bits_vs_loss.png` — Extractable secret bits vs loss (when `--finite-key`)
 - `figures/finite_size_penalty.png` — Finite-size penalty factor vs loss (when `--finite-key`)

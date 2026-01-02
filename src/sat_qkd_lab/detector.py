@@ -32,9 +32,28 @@ class DetectorParams:
 
     p_afterpulse : float
         Afterpulsing probability (0..1). Probability that a detection
-        triggers a spurious subsequent detection. Included as a stub for
-        future modeling; not currently used in simulations.
+        triggers a spurious subsequent detection for a limited window.
         Default: 0.0.
+
+    afterpulse_window : int
+        Number of subsequent pulse windows affected by afterpulsing.
+        Default: 0.
+
+    afterpulse_decay : float
+        Exponential decay constant in pulses for afterpulsing bump. If 0,
+        applies a flat additive bump across the window.
+        Default: 0.0.
+
+    dead_time_pulses : int
+        Number of pulse windows after a detection during which the detector
+        is blind (no clicks can occur).
+        Default: 0.
+
+    eta_z : float, optional
+        Detection efficiency for Z-basis measurements. Defaults to eta.
+
+    eta_x : float, optional
+        Detection efficiency for X-basis measurements. Defaults to eta.
 
     Notes
     -----
@@ -52,6 +71,11 @@ class DetectorParams:
     eta: float = 0.2
     p_bg: float = 1e-4
     p_afterpulse: float = 0.0
+    afterpulse_window: int = 0
+    afterpulse_decay: float = 0.0
+    dead_time_pulses: int = 0
+    eta_z: float | None = None
+    eta_x: float | None = None
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.eta <= 1.0:
@@ -60,6 +84,20 @@ class DetectorParams:
             raise ValueError(f"p_bg must be in [0, 1], got {self.p_bg}")
         if not 0.0 <= self.p_afterpulse <= 1.0:
             raise ValueError(f"p_afterpulse must be in [0, 1], got {self.p_afterpulse}")
+        if self.afterpulse_window < 0:
+            raise ValueError(f"afterpulse_window must be >= 0, got {self.afterpulse_window}")
+        if self.afterpulse_decay < 0.0:
+            raise ValueError(f"afterpulse_decay must be >= 0, got {self.afterpulse_decay}")
+        if self.dead_time_pulses < 0:
+            raise ValueError(f"dead_time_pulses must be >= 0, got {self.dead_time_pulses}")
+        eta_z = self.eta if self.eta_z is None else self.eta_z
+        eta_x = self.eta if self.eta_x is None else self.eta_x
+        if not 0.0 <= eta_z <= 1.0:
+            raise ValueError(f"eta_z must be in [0, 1], got {eta_z}")
+        if not 0.0 <= eta_x <= 1.0:
+            raise ValueError(f"eta_x must be in [0, 1], got {eta_x}")
+        object.__setattr__(self, "eta_z", eta_z)
+        object.__setattr__(self, "eta_x", eta_x)
 
 
 # Convenient default instance

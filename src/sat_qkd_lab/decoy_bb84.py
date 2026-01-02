@@ -80,6 +80,10 @@ class DecoyParams:
     p_v : float
         Probability of sending vacuum state.
         Note: p_s + p_d + p_v must equal 1.
+    mu_s_sigma : float
+        Std dev for signal intensity fluctuations (>= 0).
+    mu_d_sigma : float
+        Std dev for decoy intensity fluctuations (>= 0).
     """
     mu_s: float = 0.6
     mu_d: float = 0.1
@@ -87,6 +91,8 @@ class DecoyParams:
     p_s: float = 0.8
     p_d: float = 0.15
     p_v: float = 0.05
+    mu_s_sigma: float = 0.0
+    mu_d_sigma: float = 0.0
 
     def __post_init__(self) -> None:
         if self.mu_v != 0.0:
@@ -97,6 +103,10 @@ class DecoyParams:
             raise ValueError(f"Probabilities must sum to 1, got {self.p_s + self.p_d + self.p_v}")
         if any(p < 0 for p in [self.p_s, self.p_d, self.p_v]):
             raise ValueError("All probabilities must be non-negative")
+        if self.mu_s_sigma < 0.0:
+            raise ValueError("mu_s_sigma must be >= 0")
+        if self.mu_d_sigma < 0.0:
+            raise ValueError("mu_d_sigma must be >= 0")
 
 
 DEFAULT_DECOY = DecoyParams()
@@ -156,7 +166,6 @@ def simulate_decoy_bb84(
 
     # Channel parameters
     trans = 10 ** (-loss_db / 10.0)
-    eta_ch = det.eta * trans  # Combined channel + detector efficiency
 
     # Allocate pulses to each intensity
     intensity_choice = rng.choice(
@@ -182,7 +191,7 @@ def simulate_decoy_bb84(
 
         # For each pulse, at least one photon must survive for signal click
         # P(at least one photon detected) = 1 - (1 - eta_ch)^n for n photons
-        survive_probs = 1.0 - np.power(1.0 - eta_ch, photon_nums)
+        survive_probs = 1.0 - np.power(1.0 - det.eta * trans, photon_nums)
         sig_click = rng.random(n_total) < survive_probs
 
         # Background clicks
@@ -225,10 +234,115 @@ def simulate_decoy_bb84(
         n_errors = int(np.sum(a_sift != b_sift))
         return n_sifted, n_errors
 
-    # Simulate each intensity
-    n_sift_s, n_err_s = simulate_intensity(dec.mu_s, int(n_signal))
-    n_sift_d, n_err_d = simulate_intensity(dec.mu_d, int(n_decoy))
-    n_sift_v, n_err_v = simulate_intensity(dec.mu_v, int(n_vacuum))
+    afterpulse_enabled = det.p_afterpulse > 0.0 and det.afterpulse_window > 0
+    realism_enabled = (
+        dec.mu_s_sigma > 0.0
+        or dec.mu_d_sigma > 0.0
+        or afterpulse_enabled
+        or det.dead_time_pulses > 0
+        or det.eta_z != det.eta
+        or det.eta_x != det.eta
+    )
+
+    def _sample_truncated_mu(mean: float, sigma: float, max_tries: int = 10) -> float:
+        if sigma <= 0.0:
+            return mean
+        for _ in range(max_tries):
+            val = float(rng.normal(mean, sigma))
+            if val >= 0.0:
+                return val
+        return max(0.0, mean)
+
+    if realism_enabled:
+        n_sift_s = n_err_s = 0
+        n_sift_d = n_err_d = 0
+        n_sift_v = n_err_v = 0
+        afterpulse_counter = 0
+        afterpulse_age = 0
+        dead_time_counter = 0
+
+        for i in range(n_pulses):
+            has_afterpulse = afterpulse_counter > 0
+            if afterpulse_counter > 0:
+                afterpulse_counter -= 1
+                afterpulse_age += 1
+            if dead_time_counter > 0:
+                dead_time_counter -= 1
+                continue
+
+            intensity = int(intensity_choice[i])
+            if intensity == 0:
+                mu = dec.mu_s
+                sigma = dec.mu_s_sigma
+            elif intensity == 1:
+                mu = dec.mu_d
+                sigma = dec.mu_d_sigma
+            else:
+                mu = dec.mu_v
+                sigma = 0.0
+
+            mu_eff = _sample_truncated_mu(mu, sigma)
+
+            photon_num = int(rng.poisson(mu_eff))
+            a_bit = int(rng.integers(0, 2))
+            a_basis = int(rng.integers(0, 2))
+            b_basis = int(rng.integers(0, 2))
+
+            eta_eff = det.eta_z if b_basis == 0 else det.eta_x
+            eta_ch = eta_eff * trans
+            if photon_num > 0:
+                survive_prob = 1.0 - (1.0 - eta_ch) ** photon_num
+            else:
+                survive_prob = 0.0
+
+            sig_click = rng.random() < survive_prob
+            if has_afterpulse:
+                if det.afterpulse_decay > 0.0:
+                    decay = math.exp(-afterpulse_age / det.afterpulse_decay)
+                else:
+                    decay = 1.0
+                afterpulse_bump = det.p_afterpulse * decay
+            else:
+                afterpulse_bump = 0.0
+            p_bg_eff = det.p_bg + afterpulse_bump
+            if p_bg_eff > 1.0:
+                p_bg_eff = 1.0
+            bg_click = rng.random() < p_bg_eff
+            click = sig_click or bg_click
+
+            if not click:
+                continue
+
+            afterpulse_counter = det.afterpulse_window
+            afterpulse_age = 0
+            dead_time_counter = det.dead_time_pulses
+
+            b_bit = a_bit
+            if b_basis != a_basis:
+                b_bit = int(rng.integers(0, 2))
+            if bg_click and not sig_click:
+                b_bit = int(rng.integers(0, 2))
+            if flip_prob > 0.0 and rng.random() < flip_prob:
+                b_bit ^= 1
+
+            if b_basis == a_basis:
+                if intensity == 0:
+                    n_sift_s += 1
+                    if b_bit != a_bit:
+                        n_err_s += 1
+                elif intensity == 1:
+                    n_sift_d += 1
+                    if b_bit != a_bit:
+                        n_err_d += 1
+                else:
+                    n_sift_v += 1
+                    if b_bit != a_bit:
+                        n_err_v += 1
+    else:
+        # Simulate each intensity with vectorized sampling (fast path).
+        n_sift_s, n_err_s = simulate_intensity(dec.mu_s, int(n_signal))
+        n_sift_d, n_err_d = simulate_intensity(dec.mu_d, int(n_decoy))
+        n_sift_v, n_err_v = simulate_intensity(dec.mu_v, int(n_vacuum))
 
     # Compute gains (sifted detection probability)
     # Note: We measure sifted gain = n_sifted / n_sent (already includes 1/2 sifting factor)

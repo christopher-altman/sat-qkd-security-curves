@@ -8,6 +8,22 @@ def _extract(records: Sequence[Dict[str, Any]], key: str) -> np.ndarray:
     return np.array([r[key] for r in records], dtype=float)
 
 
+def _key_rate_scale_settings(values: Sequence[float]) -> Tuple[str, Dict[str, float]]:
+    if not values:
+        return "linear", {"bottom": 0}
+
+    positives = [v for v in values if v > 0]
+
+    if positives and all(v > 0 for v in values):
+        return "log", {"bottom": min(positives) * 0.1}
+
+    if positives and all(v >= 0 for v in values):
+        linthresh = max(min(positives) * 0.1, 1e-15)
+        return "symlog", {"linthresh": linthresh, "linscale": 1.0, "bottom": 0}
+
+    return "linear", {"bottom": 0}
+
+
 def plot_key_metrics_vs_loss(
     records_no_attack: Sequence[Dict[str, Any]],
     records_attack: Sequence[Dict[str, Any]],
@@ -233,6 +249,76 @@ def plot_decoy_key_rate_vs_loss(
         # Linear scale for all-zero or negative values
         ax.set_ylim(bottom=0)
         ax.set_yscale("linear")
+
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+
+    return out_path
+
+
+def plot_decoy_key_rate_vs_loss_comparison(
+    baseline_records: Sequence[Dict[str, Any]],
+    realism_records: Sequence[Dict[str, Any]],
+    out_path: str,
+    show_ci: bool = False,
+) -> str:
+    """
+    Plot decoy-state BB84 key rate vs loss comparing baseline and realism.
+
+    Uses log scale when all key rates are positive, symlog when zeros are
+    present (to preserve true zeros without epsilon clipping), and linear when
+    no positive values exist.
+
+    Parameters
+    ----------
+    baseline_records : Sequence[Dict[str, Any]]
+        Baseline decoy sweep results.
+    realism_records : Sequence[Dict[str, Any]]
+        Decoy sweep results with realism enabled.
+    out_path : str
+        Output path for the plot.
+    show_ci : bool
+        If True and records contain std fields, show error bars for realism.
+
+    Returns
+    -------
+    str
+        Path to the saved plot.
+    """
+    loss_base = _extract(baseline_records, "loss_db")
+    loss_real = _extract(realism_records, "loss_db")
+    key_base = _extract(baseline_records, "key_rate_asymptotic")
+    key_real = _extract(realism_records, "key_rate_asymptotic")
+
+    fig, ax = plt.subplots()
+
+    ax.plot(loss_base, key_base, marker="o", markersize=3, label="Baseline")
+    if show_ci and realism_records and "key_rate_std" in realism_records[0]:
+        key_std = _extract(realism_records, "key_rate_std")
+        ax.errorbar(loss_real, key_real, yerr=1.96 * key_std, capsize=3,
+                    label="Realism")
+    else:
+        ax.plot(loss_real, key_real, marker="o", markersize=3, label="Realism")
+
+    ax.set_xlabel("Channel loss (dB)")
+    ax.set_ylabel("Asymptotic key rate (per pulse)")
+    ax.set_title("Decoy-State BB84: Realism vs Baseline")
+    ax.legend()
+
+    combined = list(key_base) + list(key_real)
+    scale, scale_params = _key_rate_scale_settings(combined)
+
+    if scale == "log":
+        ax.set_yscale("log")
+        ax.set_ylim(bottom=scale_params["bottom"])
+    elif scale == "symlog":
+        ax.set_yscale("symlog",
+                      linthresh=scale_params["linthresh"],
+                      linscale=scale_params["linscale"])
+        ax.set_ylim(bottom=scale_params["bottom"])
+    else:
+        ax.set_yscale("linear")
+        ax.set_ylim(bottom=scale_params["bottom"])
 
     plt.savefig(out_path, dpi=200, bbox_inches="tight")
     plt.close()

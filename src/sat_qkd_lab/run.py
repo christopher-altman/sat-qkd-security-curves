@@ -23,6 +23,7 @@ from .plotting import (
     plot_qber_vs_loss_ci,
     plot_key_rate_vs_loss_ci,
     plot_decoy_key_rate_vs_loss,
+    plot_decoy_key_rate_vs_loss_comparison,
     plot_finite_key_comparison,
     plot_finite_key_bits_vs_loss,
     plot_finite_size_penalty,
@@ -104,6 +105,10 @@ def main() -> None:
                    help="Decoy intensity (mean photon number)")
     d.add_argument("--mu-v", type=float, default=0.0,
                    help="Vacuum intensity (must be 0)")
+    d.add_argument("--mu-sigma", type=float, default=0.0,
+                   help="Std dev of signal intensity noise (default: 0)")
+    d.add_argument("--decoy-mu-sigma", type=float, default=0.0,
+                   help="Std dev of decoy intensity noise (default: 0)")
     d.add_argument("--p-s", type=float, default=0.8,
                    help="Probability of signal state")
     d.add_argument("--p-d", type=float, default=0.15,
@@ -112,6 +117,18 @@ def main() -> None:
                    help="Probability of vacuum state")
     d.add_argument("--trials", type=int, default=1,
                    help="Number of trials per loss value")
+    d.add_argument("--afterpulse-prob", type=float, default=0.0,
+                   help="Afterpulsing probability per detection (default: 0)")
+    d.add_argument("--afterpulse-window", type=int, default=0,
+                   help="Afterpulse window length in pulses (default: 0)")
+    d.add_argument("--afterpulse-decay", type=float, default=0.0,
+                   help="Afterpulse decay constant in pulses (default: 0)")
+    d.add_argument("--dead-time-pulses", type=int, default=0,
+                   help="Dead time in pulses after a detection (default: 0)")
+    d.add_argument("--eta-z", type=float, default=None,
+                   help="Z-basis detection efficiency (default: --eta)")
+    d.add_argument("--eta-x", type=float, default=None,
+                   help="X-basis detection efficiency (default: --eta)")
 
     # --- pass-sweep command ---
     ps = sub.add_parser("pass-sweep", help="Simulate QKD during a satellite pass over elevation profile.")
@@ -226,9 +243,19 @@ def _validate_args(args: argparse.Namespace) -> None:
         validate_float("mu-s", args.mu_s, min_value=0.0)
         validate_float("mu-d", args.mu_d, min_value=0.0)
         validate_float("mu-v", args.mu_v, min_value=0.0, max_value=0.0)
+        validate_float("mu-sigma", args.mu_sigma, min_value=0.0)
+        validate_float("decoy-mu-sigma", args.decoy_mu_sigma, min_value=0.0)
         validate_float("p-s", args.p_s, min_value=0.0, max_value=1.0)
         validate_float("p-d", args.p_d, min_value=0.0, max_value=1.0)
         validate_float("p-v", args.p_v, min_value=0.0, max_value=1.0)
+        validate_float("afterpulse-prob", args.afterpulse_prob, min_value=0.0, max_value=1.0)
+        validate_int("afterpulse-window", args.afterpulse_window, min_value=0)
+        validate_float("afterpulse-decay", args.afterpulse_decay, min_value=0.0)
+        validate_int("dead-time-pulses", args.dead_time_pulses, min_value=0)
+        if args.eta_z is not None:
+            validate_float("eta-z", args.eta_z, min_value=0.0, max_value=1.0)
+        if args.eta_x is not None:
+            validate_float("eta-x", args.eta_x, min_value=0.0, max_value=1.0)
     elif args.cmd == "pass-sweep":
         validate_float("max-elevation", args.max_elevation, min_value=0.0, max_value=90.0)
         validate_float("min-elevation", args.min_elevation, min_value=0.0, max_value=90.0)
@@ -590,7 +617,16 @@ def _run_decoy_sweep(args: argparse.Namespace) -> None:
         raise ValueError(f"Probabilities must sum to 1, got {prob_sum}")
 
     loss_vals = np.linspace(args.loss_min, args.loss_max, args.steps)
-    detector = DetectorParams(eta=args.eta, p_bg=args.p_bg)
+    detector = DetectorParams(
+        eta=args.eta,
+        p_bg=args.p_bg,
+        p_afterpulse=args.afterpulse_prob,
+        afterpulse_window=args.afterpulse_window,
+        afterpulse_decay=args.afterpulse_decay,
+        dead_time_pulses=args.dead_time_pulses,
+        eta_z=args.eta_z,
+        eta_x=args.eta_x,
+    )
     decoy = DecoyParams(
         mu_s=args.mu_s,
         mu_d=args.mu_d,
@@ -598,6 +634,8 @@ def _run_decoy_sweep(args: argparse.Namespace) -> None:
         p_s=args.p_s,
         p_d=args.p_d,
         p_v=args.p_v,
+        mu_s_sigma=args.mu_sigma,
+        mu_d_sigma=args.decoy_mu_sigma,
     )
 
     outdir = Path(args.outdir)
@@ -625,6 +663,43 @@ def _run_decoy_sweep(args: argparse.Namespace) -> None:
     )
     print("Plot:", plot_path)
 
+    afterpulse_enabled = args.afterpulse_prob > 0.0 and args.afterpulse_window > 0
+    realism_enabled = any([
+        args.mu_sigma > 0.0,
+        args.decoy_mu_sigma > 0.0,
+        afterpulse_enabled,
+        args.dead_time_pulses > 0,
+        args.eta_z is not None and args.eta_z != args.eta,
+        args.eta_x is not None and args.eta_x != args.eta,
+    ])
+    if realism_enabled:
+        print("Note: realism enabled -> per-pulse simulation; consider reducing --pulses/--trials.")
+        baseline_detector = DetectorParams(eta=args.eta, p_bg=args.p_bg)
+        baseline_decoy = DecoyParams(
+            mu_s=args.mu_s,
+            mu_d=args.mu_d,
+            mu_v=args.mu_v,
+            p_s=args.p_s,
+            p_d=args.p_d,
+            p_v=args.p_v,
+        )
+        baseline_results = sweep_decoy_loss(
+            loss_vals,
+            flip_prob=args.flip_prob,
+            n_pulses=args.pulses,
+            seed=args.seed,
+            decoy=baseline_decoy,
+            detector=baseline_detector,
+            n_trials=args.trials,
+        )
+        realism_plot_path = plot_decoy_key_rate_vs_loss_comparison(
+            baseline_results,
+            results,
+            str(outdir / "figures" / "decoy_key_rate_vs_loss_realism.png"),
+            show_ci=show_ci,
+        )
+        print("Plot:", realism_plot_path)
+
     # Update or create report
     report_path = outdir / "reports" / "latest.json"
     if report_path.exists():
@@ -650,11 +725,19 @@ def _run_decoy_sweep(args: argparse.Namespace) -> None:
             "mu_s": args.mu_s,
             "mu_d": args.mu_d,
             "mu_v": args.mu_v,
+            "mu_sigma": args.mu_sigma,
+            "decoy_mu_sigma": args.decoy_mu_sigma,
             "p_s": args.p_s,
             "p_d": args.p_d,
             "p_v": args.p_v,
             "eta": args.eta,
+            "eta_z": detector.eta_z,
+            "eta_x": detector.eta_x,
             "p_bg": args.p_bg,
+            "afterpulse_prob": args.afterpulse_prob,
+            "afterpulse_window": args.afterpulse_window,
+            "afterpulse_decay": args.afterpulse_decay,
+            "dead_time_pulses": args.dead_time_pulses,
         },
     }
 
@@ -662,6 +745,8 @@ def _run_decoy_sweep(args: argparse.Namespace) -> None:
     if "artifacts" not in report:
         report["artifacts"] = {}
     report["artifacts"]["decoy_key_rate_plot"] = "decoy_key_rate_vs_loss.png"
+    if realism_enabled:
+        report["artifacts"]["decoy_key_rate_realism_plot"] = "decoy_key_rate_vs_loss_realism.png"
 
     with open(report_path, "w") as f:
         json.dump(report, f, indent=2)
