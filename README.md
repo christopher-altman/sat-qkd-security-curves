@@ -12,12 +12,12 @@
 [![Website](https://img.shields.io/badge/website-christopheraltman.com-green)](https://www.christopheraltman.com)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Altman-blue?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/Altman)
 
-*Featured result: secret-key rate and QBER vs channel loss (no-attack vs intercept–resend).*
-
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="figures/hero_dark.png">
   <img alt="Secret key rate and QBER vs channel loss" src="figures/hero_light.png" width="920">
 </picture>
+
+*Featured result: secret-key rate and QBER vs channel loss (no-attack vs intercept–resend).*
 
 **Figure 1. Estimated secret-key rate versus channel loss for BB84.**  
 A Monte-Carlo sweep shows that link loss alone reduces detections but does not destroy secrecy until error rates dominate. Under an intercept–resend attack, the secret-key fraction collapses to zero at moderate loss even while sifted bits remain non-zero, revealing the security cliff where privacy amplification can no longer extract secrecy.
