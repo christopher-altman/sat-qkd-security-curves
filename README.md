@@ -16,8 +16,8 @@
 <br>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="figures/hero_dark.png">
-  <img alt="Secret key rate and QBER vs channel loss" src="figures/hero_light.png" width="920">
+  <source media="(prefers-color-scheme: dark)" srcset="figures/hero_dark.jpg">
+  <img alt="Secret key rate and QBER vs channel loss" src="figures/hero_light.jpg" width="920">
 </picture>
 
 <br>
