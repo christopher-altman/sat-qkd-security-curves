@@ -12,6 +12,19 @@
 [![Website](https://img.shields.io/badge/website-christopheraltman.com-green)](https://www.christopheraltman.com)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Altman-blue?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/Altman)
 
+*Featured result: secret-key rate and QBER vs channel loss (no-attack vs intercept–resend).*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="figures/hero_dark.png">
+  <img alt="Secret key rate and QBER vs channel loss" src="figures/hero_light.png" width="920">
+</picture>
+
+**Figure 1. Estimated secret-key rate versus channel loss for BB84.**  
+A Monte-Carlo sweep shows that link loss alone reduces detections but does not destroy secrecy until error rates dominate. Under an intercept–resend attack, the secret-key fraction collapses to zero at moderate loss even while sifted bits remain non-zero, revealing the security cliff where privacy amplification can no longer extract secrecy.
+
+**Figure 2. Quantum Bit Error Rate (QBER) versus channel loss for BB84.**  
+Without attack, intrinsic measurement noise keeps QBER low across loss. An intercept–resend adversary injects a strong QBER signature, driving errors beyond the tolerable entropy budget. The plotted spikes illustrate the detectable breakage regime that classical throughput monitors would miss without explicit QBER estimation.
+
 ## Problem / Phenomenon Investigated
 
 Satellite and fibre Quantum Key Distribution (QKD) systems live or die on a simple fact: bits can still flow while secrecy collapses. This experiment creates a reproducible “security curve” lab: simulate BB84 under realistic loss/noise and a textbook intercept–resend attacker, then compute QBER and the asymptotic secret-key fraction.
@@ -136,15 +149,6 @@ The output JSON includes these new fields for CI sweeps:
 
 All CI lower bounds are clamped to 0; QBER CI upper is clamped to 0.5.
 
-### Secret-key rate vs loss / QBER vs loss (BB84)
-
-![Secret-key rate vs loss](figures/hero_light.png)
-
-**Figure 1. Estimated secret-key rate versus channel loss for BB84.**  
-A Monte-Carlo sweep shows that link loss alone reduces detections but does not destroy secrecy until error rates dominate. Under an intercept–resend attack, the secret-key fraction collapses to zero at moderate loss even while sifted bits remain non-zero, revealing the security cliff where privacy amplification can no longer extract secrecy.
-
-**Figure 2. Quantum Bit Error Rate (QBER) versus channel loss for BB84.**  
-Without attack, intrinsic measurement noise keeps QBER low across loss. An intercept–resend adversary injects a strong QBER signature, driving errors beyond the tolerable entropy budget. The plotted spikes illustrate the detectable breakage regime that classical throughput monitors would miss without explicit QBER estimation.
 
 ## Interpretation
 
