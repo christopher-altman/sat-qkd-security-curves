@@ -63,17 +63,13 @@ Without attack, intrinsic measurement noise keeps QBER low across loss. An inter
 
 The curves show an engineering-facing “security budget.” Loss reduces detections (sifted key), while noise and attacks raise QBER. Once QBER rises enough, the secret fraction collapses to zero: you can still exchange bits, but you cannot distill secrecy. This makes the QKD security story measurable and testable, rather than rhetorical.
 
-## Topics
-
-quantum-ml ; qml ; simulation ; verification ; cryptography ; qkd ; bb84 ; satellite ; security
-
 ## Why this matters
 
 Translates physics-level behavior (loss/noise/attack) into operational metrics (QBER, secret-key rate), imperative metrics in the construction of integrated satellite + fibre QKD networks.
 
-## Tags
+## Topics
 
-`qml` · `quantum-ml` · `verification` · `cryptography` · `robustness` · `quantum-cryptography` · `qkd` · `bb84` · `satellite` · `security` · `noise-analysis` · `infosec` · `network-security`
+`qml` · `quantum-ml` · `verification` · `cryptography` · `robustness` · `quantum-cryptography` · `qkd` · `bb84` · `satellite` · `security` · `noise-analysis` · `infosec` · `network-security` · `simulation`
 
 ## References
 
