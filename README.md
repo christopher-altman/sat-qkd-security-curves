@@ -74,15 +74,15 @@ Physics-level behavior (loss/noise/attack) translates into operational metrics (
 
 1. Bennett, C. H., & Brassard, G. (1984). **[Quantum cryptography: Public key distribution and coin tossing.](https://www.sciencedirect.com/science/article/pii/S0304397514004241)** *Proceedings of the IEEE International Conference on Computers, Systems and Signal Processing* (Bangalore, India), 175–179.
 
-2. Ekert, A. K. (1991). **Quantum cryptography based on Bell’s theorem.** *Physical Review Letters*, *67*(6), 661–663. https://doi.org/10.1103/PhysRevLett.67.661
+2. Ekert, A. K. (1991). **[Quantum cryptography based on Bell’s theorem.](https://doi.org/10.1103/PhysRevLett.67.661)** *Physical Review Letters*, *67*(6), 661–663. 
 
-3. Shor, P. W., & Preskill, J. (2000). **Simple proof of security of the BB84 quantum key distribution protocol.** *Physical Review Letters*, *85*, 441–444. https://doi.org/10.1103/PhysRevLett.85.441
+3. Shor, P. W., & Preskill, J. (2000). **[Simple proof of security of the BB84 quantum key distribution protocol.](https://doi.org/10.1103/PhysRevLett.85.441)** *Physical Review Letters*, *85*, 441–444. 
 
-4. Renner, R., Gisin, N., & Kraus, B. (2005). **An information-theoretic security proof for QKD protocols.** *Physical Review A*, *72*, 012332. https://doi.org/10.1103/PhysRevA.72.012332 *(Preprint: arXiv:quant-ph/0502064)*
+4. Renner, R., Gisin, N., & Kraus, B. (2005). **[An information-theoretic security proof for QKD protocols.](http://arXiv:quant-ph/0502064)** *Physical Review A*, *72*, 012332. https://doi.org/10.1103/PhysRevA.72.012332 
 
-5. Gisin, N., Ribordy, G., Tittel, W., & Zbinden, H. (2002). **Quantum cryptography.** *Reviews of Modern Physics*, *74*(1), 145–195. https://doi.org/10.1103/RevModPhys.74.145
+5. Gisin, N., Ribordy, G., Tittel, W., & Zbinden, H. (2002). **[Quantum cryptography.]**(https://doi.org/10.1103/RevModPhys.74.145) *Reviews of Modern Physics*, *74*(1), 145–195. 
 
-6. Altman, C., Wiliams, C., Ursin, R., Villoresi, P., Sharma, V. **Astronaut Development and Deployment of a Secure Space Communications Network,** NASA NIAC/OCT; DARPA QUINESS (Macroscopic Quantum Communications). [PDF](https://drive.google.com/file/d/0B99KWApna6GoX3JzZGMzbzNrMjg/view?resourcekey=0-b1lf7VUq8QmpRriVN5N2sw)
+6. Altman, C., Wiliams, C., Ursin, R., Villoresi, P., Sharma, V. **[Astronaut Development and Deployment of a Secure Space Communications Network.](https://drive.google.com/file/d/0B99KWApna6GoX3JzZGMzbzNrMjg/view?resourcekey=0-b1lf7VUq8QmpRriVN5N2sw)** NASA NIAC/OCT; DARPA QUINESS (Macroscopic Quantum Communications). 
 
 ## Citations
 
