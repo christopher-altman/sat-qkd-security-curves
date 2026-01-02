@@ -72,7 +72,7 @@ Physics-level behavior (loss/noise/attack) translates into operational metrics (
 
 ## References
 
-1. Bennett, C. H., & Brassard, G. (1984). **Quantum cryptography: Public key distribution and coin tossing.** *Proceedings of the IEEE International Conference on Computers, Systems and Signal Processing* (Bangalore, India), 175–179.
+1. Bennett, C. H., & Brassard, G. (1984). **[Quantum cryptography: Public key distribution and coin tossing.](https://www.sciencedirect.com/science/article/pii/S0304397514004241)** *Proceedings of the IEEE International Conference on Computers, Systems and Signal Processing* (Bangalore, India), 175–179.
 
 2. Ekert, A. K. (1991). **Quantum cryptography based on Bell’s theorem.** *Physical Review Letters*, *67*(6), 661–663. https://doi.org/10.1103/PhysRevLett.67.661
 
