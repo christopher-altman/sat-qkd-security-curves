@@ -1,5 +1,6 @@
 from __future__ import annotations
 import argparse
+import math
 import json
 from datetime import datetime, timezone
 import numpy as np
@@ -124,14 +125,19 @@ def main() -> None:
                     help="Alias for --pass-duration")
     ps.add_argument("--time-step", type=float, default=5.0,
                     help="Time resolution in seconds (default: 5)")
-    ps.add_argument("--flip-prob", type=float, default=0.005)
-    ps.add_argument("--pulses", type=int, default=200_000)
-    ps.add_argument("--n-sent", type=int, default=None,
-                    help="Total pulses sent over the pass (overrides --pulses if set)")
-    ps.add_argument("--rep-rate", type=float, default=None,
-                    help="Pulse repetition rate in Hz (overrides --pulses if set)")
-    ps.add_argument("--seed", type=int, default=0)
-    ps.add_argument("--outdir", type=str, default=".")
+    ps.add_argument("--flip-prob", type=float, default=0.005,
+                    help="Bit flip probability (default: 0.005)")
+    ps_pulses = ps.add_mutually_exclusive_group()
+    ps_pulses.add_argument("--pulses", type=int, default=200_000,
+                           help="Total pulses sent over the pass (default: 200000)")
+    ps_pulses.add_argument("--n-sent", type=int, default=None,
+                           help="Total pulses sent over the pass (highest precedence)")
+    ps_pulses.add_argument("--rep-rate", type=float, default=None,
+                           help="Pulse repetition rate in Hz (total = rep_rate * pass_duration)")
+    ps.add_argument("--seed", type=int, default=0,
+                    help="Random seed for reproducibility (default: 0)")
+    ps.add_argument("--outdir", type=str, default=".",
+                    help="Output directory for figures/reports (default: .)")
     # Detector parameters
     ps.add_argument("--eta", type=float, default=DEFAULT_DETECTOR.eta,
                     help="Detector efficiency (0..1)")
@@ -260,19 +266,23 @@ def _resolve_n_sent_for_sweep(args: argparse.Namespace) -> int:
 
 
 def _resolve_pass_pulse_accounting(args: argparse.Namespace, n_steps: int) -> tuple[int, int]:
-    """Resolve pulses per step and total pulses for pass-sweep."""
+    """Resolve pulses per step and total pulses for pass-sweep.
+
+    Precedence: --n-sent, then --rep-rate, then --pulses.
+    """
     if args.n_sent is not None:
         total_sent = args.n_sent
-        pulses_per_step = max(1, int(total_sent / max(1, n_steps)))
     elif args.rep_rate is not None:
-        total_sent = int(args.rep_rate * args.pass_duration)
-        pulses_per_step = max(1, int(args.rep_rate * args.time_step))
+        # Round to avoid systematic undercount from float truncation.
+        total_sent = int(round(args.rep_rate * args.pass_duration))
     else:
-        pulses_per_step = args.pulses
-        total_sent = pulses_per_step * max(1, n_steps)
+        total_sent = args.pulses
 
-    if total_sent <= 0 or pulses_per_step <= 0:
+    if total_sent <= 0:
         raise ValueError("Pulse accounting must yield positive values.")
+
+    steps = max(1, n_steps)
+    pulses_per_step = max(1, math.ceil(total_sent / steps))
 
     return pulses_per_step, total_sent
 
