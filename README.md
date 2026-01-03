@@ -103,15 +103,15 @@ Quick run examples:
 │  ├─ test_forecast_harness.py
 │  ├─ test_calibration_fit.py
 │  └─ ...
+├─ notebooks/
 ├─ figures/
 ├─ reports/
-└─ docs/
+└─ results/
 ```
-Notes: `docs/` contains local prompt artifacts and may be gitignored for archival only.
 
 ## Problem
 
-Satellite and fiber QKD systems live or die on a simple fact: bits can still flow while secrecy collapses. This repo models that security cliff and makes it visible before it becomes a system risk.
+Satellite and fibre Quantum Key Distribution (QKD) systems live or die on a simple fact: bits can still flow while secrecy collapses. This experiment creates a reproducible “security curve” lab: simulate realistic loss/noise, models that security cliff and makes it visible before it becomes a system risk.
 
 ## Thesis
 
@@ -162,18 +162,28 @@ Realism primitives (units explicit): timing jitter σ is typically 10–200 ps f
 
 Operators need to see where secrecy collapses long before it fails in the field. Loss alone reduces detections, but secrecy fails when error rates dominate; intercept–resend drives the secret fraction to zero even when sifted bits remain. The curves show an engineering‑facing security budget: physics‑level behavior (loss/noise/attack) translates into operational metrics (QBER, secret‑key rate), which are imperative in integrated satellite + fiber QKD networks. This repo makes the cliff explicit and measurable.
 
+## Topics
+
+`qml` · `quantum-ml` · `verification` · `cryptography` · `robustness` · `quantum-cryptography` · `qkd` · `bb84` · `satellite` · `security` · `noise-analysis` · `infosec` · `network-security` · `simulation`
+
 ## References
 
-- Bennett, C. H., & Brassard, G. (1984). Quantum cryptography: Public key distribution and coin tossing. Proceedings of the IEEE International Conference on Computers, Systems and Signal Processing (Bangalore, India), 175–179.
-- Ekert, A. K. (1991). Quantum cryptography based on Bell’s theorem. Physical Review Letters, 67(6), 661–663.
-- Shor, P. W., & Preskill, J. (2000). Simple proof of security of the BB84 quantum key distribution protocol. Physical Review Letters, 85, 441–444.
-- Renner, R., Gisin, N., & Kraus, B. (2005). An information‑theoretic security proof for QKD protocols. Physical Review A, 72, 012332.
-- Gisin, N., Ribordy, G., Tittel, W., & Zbinden, H. (2002). Quantum cryptography. Reviews of Modern Physics, 74(1), 145–195.
-- Liao et al., Nature 549, 43 (2017) — satellite QKD field results.
-- Bourgoin et al., NJP 15, 023006 (2013) — LEO QKD analysis framework.
-- Altman, C., Williams, C., Ursin, R., Villoresi, P., Sharma, V. Astronaut Development and Deployment of a Secure Space Communications Network. NASA NIAC/OCT; DARPA QUINESS.
+1. Bennett, C. H., & Brassard, G. (1984). [Quantum cryptography: Public key distribution and coin tossing.](https://www.sciencedirect.com/science/article/pii/S0304397514004241) *Proceedings of the IEEE International Conference on Computers, Systems and Signal Processing* (Bangalore, India), 175–179.
 
-Citation:
+2. Ekert, A. K. (1991). [Quantum cryptography based on Bell’s theorem.](https://doi.org/10.1103/PhysRevLett.67.661) *Physical Review Letters*, *67*(6), 661–663. 
+
+3. Shor, P. W., & Preskill, J. (2000). [Simple proof of security of the BB84 quantum key distribution protocol.](https://doi.org/10.1103/PhysRevLett.85.441) *Physical Review Letters*, *85*, 441–444. 
+
+4. Renner, R., Gisin, N., & Kraus, B. (2005). [An information-theoretic security proof for QKD protocols.](http://arXiv:quant-ph/0502064) *[Physical Review A](https://doi.org/10.1103/PhysRevA.72.012332)*, *72*, 012332.  
+
+5. Gisin, N., Ribordy, G., Tittel, W., & Zbinden, H. (2002). [Quantum cryptography.](https://doi.org/10.1103/RevModPhys.74.145) *Reviews of Modern Physics*, *74*(1), 145–195. 
+
+6. Altman, C., Williams, C., Ursin, R., Villoresi, P., Sharma, V. [Astronaut Development and Deployment of a Secure Space Communications Network.](https://drive.google.com/file/d/0B99KWApna6GoX3JzZGMzbzNrMjg/view?resourcekey=0-b1lf7VUq8QmpRriVN5N2sw) NASA NIAC/OCT; DARPA QUINESS (Macroscopic Quantum Communications). 
+
+## Citations
+
+If you use QVL in your research, please cite:
+
 ```bibtex
 @software{sat-qkd-curves2026,
   title={Satellite Quantum Key Distribution Security Curves},
@@ -183,12 +193,19 @@ Citation:
 }
 ```
 
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.
+
 ## Contact
-https://www.christopheraltman.com  
-https://lab.christopheraltman.com  
-https://christopher-altman.github.io  
-https://github.com/christopher-altman  
-https://scholar.google.com/citations?user=tvwpCcgAAAAJ  
-x@christopheraltman.com  
-License: MIT (see LICENSE).  
-Christopher Altman (2026)
+
+- **Website:** [christopheraltman.com](https://christopheraltman.com)
+- **Research portfolio:** [lab.christopheraltman.com](https://lab.christopheraltman.com/)
+- **Portfolio mirror:** [christopher-altman.github.io](https://christopher-altman.github.io/)
+- **GitHub:** [github.com/christopher-altman](https://github.com/christopher-altman)
+- **Google Scholar:** [scholar.google.com/citations?user=tvwpCcgAAAAJ](https://scholar.google.com/citations?user=tvwpCcgAAAAJ)
+- **Email:** x@christopheraltman.com
+
+---
+
+*Christopher Altman (2026)*
