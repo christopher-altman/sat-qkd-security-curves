@@ -49,6 +49,7 @@ from .plotting import (
     plot_clock_sync_diagnostics,
     plot_fading_evolution,
     plot_secure_window_fragmentation,
+    plot_basis_bias_vs_elevation,
 )
 from .free_space_link import FreeSpaceLinkParams, generate_elevation_profile
 from .detector import DetectorParams, DEFAULT_DETECTOR
@@ -89,6 +90,7 @@ from .fading_samples import sample_fading_transmittance, plot_eta_samples
 from .hil_adapters import ingest_timetag_file, playback_pass, compute_validation_diffs
 from .clock_sync import generate_beacon_times, apply_clock_model, estimate_offset_drift
 from .ou_fading import simulate_ou_transmittance, compute_outage_clusters
+from .basis_bias import BasisBiasParams, basis_bias_from_elevation, basis_probs_from_bias
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -445,6 +447,17 @@ def build_parser() -> argparse.ArgumentParser:
     fou.add_argument("--outdir", type=str, default=".",
                      help="Output directory for reports/figures (default: .)")
 
+    # --- basis-bias command ---
+    bb = sub.add_parser("basis-bias", help="Simulate elevation-dependent basis bias.")
+    bb.add_argument("--max-elevation", type=float, default=60.0)
+    bb.add_argument("--min-elevation", type=float, default=10.0)
+    bb.add_argument("--pass-duration", type=float, default=300.0)
+    bb.add_argument("--time-step", type=float, default=1.0)
+    bb.add_argument("--max-bias", type=float, default=0.15)
+    bb.add_argument("--rotation-deg", type=float, default=8.0)
+    bb.add_argument("--outdir", type=str, default=".",
+                    help="Output directory for reports/figures (default: .)")
+
     # --- coincidence-sim command ---
     cs = sub.add_parser("coincidence-sim", help="Simulate time-tagged coincidences and CAR vs loss.")
     cs.add_argument("--loss-min", type=float, default=20.0)
@@ -526,6 +539,8 @@ def main() -> None:
         _run_clock_sync(args)
     elif args.cmd == "fading-ou":
         _run_fading_ou(args)
+    elif args.cmd == "basis-bias":
+        _run_basis_bias(args)
 
 
 def _validate_args(args: argparse.Namespace) -> None:
@@ -760,6 +775,13 @@ def _validate_args(args: argparse.Namespace) -> None:
         validate_float("t0", args.t0, min_value=0.0, max_value=1.0)
         validate_float("outage-threshold", args.outage_threshold, min_value=0.0, max_value=1.0)
         validate_seed(args.seed)
+    elif args.cmd == "basis-bias":
+        validate_float("max-elevation", args.max_elevation, min_value=0.0, max_value=90.0)
+        validate_float("min-elevation", args.min_elevation, min_value=0.0, max_value=90.0)
+        validate_float("pass-duration", args.pass_duration, min_value=1e-6)
+        validate_float("time-step", args.time_step, min_value=1e-6)
+        validate_float("max-bias", args.max_bias, min_value=-0.95, max_value=0.95)
+        validate_float("rotation-deg", args.rotation_deg, min_value=0.0)
 
 
 def _resolve_n_sent_for_sweep(args: argparse.Namespace) -> int:
@@ -2527,6 +2549,70 @@ def _run_fading_ou(args: argparse.Namespace) -> None:
     }
 
     report_path = outdir / "reports" / "latest_fading_ou.json"
+    with open(report_path, "w") as f:
+        json.dump(report, f, indent=2)
+        f.write("\n")
+    print("Wrote:", report_path)
+
+
+def _run_basis_bias(args: argparse.Namespace) -> None:
+    """Execute elevation-dependent basis bias simulation."""
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    (outdir / "reports").mkdir(exist_ok=True)
+    (outdir / "figures").mkdir(exist_ok=True)
+
+    time_s, elevation_deg = generate_elevation_profile(
+        max_elevation_deg=args.max_elevation,
+        min_elevation_deg=args.min_elevation,
+        time_step_s=args.time_step,
+        pass_duration_s=args.pass_duration,
+    )
+    params = BasisBiasParams(
+        max_bias=args.max_bias,
+        rotation_deg_at_zenith=args.rotation_deg,
+    )
+    bias, rotation = basis_bias_from_elevation(elevation_deg, params)
+    pz, px = basis_probs_from_bias(bias)
+
+    bias_plot_path = plot_basis_bias_vs_elevation(
+        elevation_deg,
+        bias,
+        str(outdir / "figures" / "basis_bias_vs_elevation.png"),
+    )
+    print("Plot:", bias_plot_path)
+
+    report = {
+        "schema_version": "1.0",
+        "mode": "basis-bias",
+        "timestamp_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "inputs": {
+            "max_elevation_deg": float(args.max_elevation),
+            "min_elevation_deg": float(args.min_elevation),
+            "pass_duration_s": float(args.pass_duration),
+            "time_step_s": float(args.time_step),
+            "max_bias": float(args.max_bias),
+            "rotation_deg": float(args.rotation_deg),
+        },
+        "time_series": {
+            "t_seconds": [float(t) for t in time_s],
+            "elevation_deg": [float(e) for e in elevation_deg],
+            "basis_bias": [float(b) for b in bias],
+            "rotation_deg": [float(r) for r in rotation],
+            "p_z": [float(v) for v in pz],
+            "p_x": [float(v) for v in px],
+        },
+        "summary": {
+            "mean_bias": float(np.mean(bias)) if bias.size else 0.0,
+            "max_bias_observed": float(np.max(bias)) if bias.size else 0.0,
+            "mean_rotation_deg": float(np.mean(rotation)) if rotation.size else 0.0,
+        },
+        "artifacts": {
+            "basis_bias_plot": "figures/basis_bias_vs_elevation.png",
+        },
+    }
+
+    report_path = outdir / "reports" / "latest_basis_bias.json"
     with open(report_path, "w") as f:
         json.dump(report, f, indent=2)
         f.write("\n")

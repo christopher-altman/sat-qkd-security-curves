@@ -34,6 +34,7 @@ __all__ = [
     "hil_adapters",
     "clock_sync",
     "ou_fading",
+    "basis_bias",
 ]
 
 from . import free_space_link  # makes sat_qkd_lab.free_space_link available
