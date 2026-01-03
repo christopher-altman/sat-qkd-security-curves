@@ -83,12 +83,12 @@ class TestTimingModel:
             basis=np.zeros(3, dtype=np.int8),
             bit=np.zeros(3, dtype=np.int8),
         )
-        model = TimingModel(jitter_sigma_s=1e-6)
+        model = TimingModel(jitter_sigma_s=0.1)  # Larger jitter for test
         rng = np.random.default_rng(42)
         result = apply_timing_model(tags, model, rng=rng)
         # Should be close but not exact
         assert not np.allclose(result.times, tags.times)
-        assert np.allclose(result.times, tags.times, atol=1e-5)
+        assert np.allclose(result.times, tags.times, atol=1.0)
 
     def test_delta_override(self):
         """delta_override should override model offset."""
@@ -368,8 +368,10 @@ class TestApplyDeadTime:
             bit=np.zeros(4, dtype=np.int8),
         )
         result = apply_dead_time(tags, dead_time_s=0.15)
-        assert result.times.size == 1
-        assert result.times[0] == 1.0
+        # With 0.15 s dead time: keep 1.0, skip 1.1 (1.1-1.0=0.1 < 0.15)
+        # then 1.2-1.0=0.2 > 0.15 so keep, skip 1.3 (1.3-1.2=0.1 < 0.15)
+        assert result.times.size == 2
+        assert np.allclose(result.times, [1.0, 1.2])
 
 
 class TestAddAfterpulsing:
