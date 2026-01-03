@@ -50,6 +50,8 @@ Quick run examples:
 
 ```bash
 ./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 200000
+# Same sweep, but include finite-key penalties (copy/paste friendly ε defaults)
+./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 500000 --finite-key --eps-pe 1e-10 --eps-sec 1e-10 --eps-cor 1e-15
 ./py -m sat_qkd_lab.run pass-sweep --max-elevation 70 --pass-duration 300
 ./py -m sat_qkd_lab.run experiment-run --n-blocks 20 --block-seconds 30 --outdir .
 ./py -m sat_qkd_lab.run forecast-run --forecasts forecasts.json --outdir .
@@ -182,6 +184,7 @@ For BB84, the asymptotic secret fraction decreases as `e` grows and vanishes as 
 That's the security cliff: detections and sifted bits can remain nonzero while secrecy collapses.  
 
 Realism primitives (units explicit): timing jitter σ is typically 10–200 ps for SPDs and stored in seconds in code/JSON; coincidence window τc is sub‑ns and stored in seconds; fading variance Var(T) captures heavy‑tailed, time‑correlated free‑space optics where rare deep fades dominate.  
+Detector background `p_bg` is defined as a probability **per pulse / per detection gate** (not per second).
 
 ## Method
 
