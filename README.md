@@ -86,8 +86,15 @@ test -x .venv/bin/python || $PY -m venv .venv
 │  ├─ attacks.py
 │  ├─ calibration.py
 │  ├─ calibration_fit.py
+│  ├─ coincidence.py
+│  ├─ eb_observables.py
 │  ├─ telemetry.py
+│  ├─ timetags.py
+│  ├─ timing.py
+│  ├─ event_stream.py
 │  ├─ pass_model.py
+│  ├─ pointing.py
+│  ├─ optics.py
 │  ├─ experiment.py
 │  ├─ forecast.py
 │  ├─ windows.py
@@ -125,24 +132,39 @@ Notes: `docs/` contains local prompt artifacts and may be gitignored for archiva
 ./py -m sat_qkd_lab.run experiment-run --n-blocks 20 --block-seconds 30 --outdir .
 ./py -m sat_qkd_lab.run forecast-run --forecasts forecasts.json --outdir .
 ./py -m sat_qkd_lab.run calibration-fit --telemetry telemetry.json --outdir .
+./py -m sat_qkd_lab.run coincidence-sim --loss-min 20 --loss-max 60 --steps 9 --outdir .
 ```
 
 Command outputs:
 - `sweep`: `reports/latest.json`, `figures/qber_headroom_vs_loss.png` (and attack comparisons if enabled).
 - `pass-sweep`: `reports/latest_pass.json`, `figures/key_rate_vs_elevation.png`, `figures/secure_window.png`.
+  - Phase 3 flags: `--fading` (lognormal), `--pointing` with `--acq-seconds`, `--dropout-prob`, `--relock-seconds`, `--pointing-jitter-urad`, plus `--filter-bandwidth-nm`, `--detector-temp-c`.
 - `experiment-run`: `reports/latest_experiment.json` plus a blinded schedule in `reports/`.
 - `forecast-run`: `reports/forecast_blinded.json` (and `reports/forecast_unblinded.json` if `--unblind`).
 - `calibration-fit`: `reports/calibration_fit.json` and `reports/calibration_params.json`.
+- `coincidence-sim`: `reports/latest_coincidence.json`, `figures/car_vs_loss.png` (plus CHSH/visibility plots if enabled).
+  - Timing flags: `--clock-offset-s`, `--clock-drift-ppm`, `--tdc-ps`, `--estimate-offset`.
+  - Stream-mode flags: `--stream-mode`, `--gate-duty-cycle`, `--dead-time-ns`, `--afterpulse-prob`.
 
 ## Outputs
 
 Reports are written under `reports/` (for example: `reports/latest.json`, `reports/latest_pass.json`, `reports/latest_experiment.json`, `reports/forecast_blinded.json`). Figures land under `figures/`. Headroom is defined as `qber_abort - qber_mean`.
 
+Phase 3 outputs:
+- Coincidence artifacts: `reports/latest_coincidence.json`, `figures/car_vs_loss.png`, `figures/chsh_s_vs_loss.png`, `figures/visibility_vs_loss.png`.
+- Pointing/fading artifacts: `figures/pointing_lock_state.png`, `figures/transmittance_with_pointing.png`, `figures/eta_fading_samples.png`, `figures/secure_window_fading_impact.png`.
+- Optics/background parameters: `filter_bandwidth_nm`, `detector_temp_c`, and derived background rates in pass/coincidence reports.
+- Calibration outputs: `reports/calibration_fit.json` includes clock offset, pointing jitter proxy, and background rate when present.
+
+Realism knobs (units):
+- Timing jitter σ [ps], coincidence window τc [ps], TDC resolution [ps], clock drift [ppm].
+- Filter bandwidth [nm], detector temperature [°C], pointing jitter [µrad].
+
 ## Optional dashboard
 
 Install: `./py -m pip install -e ".[dashboard]"`
 Launch: `./py -m sat_qkd_lab.dashboard`
-The dashboard reads/writes the latest reports and figures. It is blinded by default; unblinding requires an explicit toggle.
+The dashboard reads/writes the latest reports and figures, including Phase 3 artifacts. It is blinded by default; unblinding requires an explicit toggle.
 
 ## Artifacts & provenance
 
