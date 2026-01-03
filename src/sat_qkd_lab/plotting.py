@@ -245,6 +245,30 @@ def plot_inventory_flow(
     return out_path
 
 
+def plot_clock_sync_diagnostics(
+    t_seconds: Sequence[float],
+    residuals: Sequence[float],
+    out_path: str,
+) -> str:
+    """Plot clock sync residuals over time and as a histogram."""
+    fig, axes = plt.subplots(2, 1, figsize=(6, 6), sharex=False)
+    axes[0].plot(t_seconds, residuals, color="tab:blue")
+    axes[0].set_xlabel("Time (s)")
+    axes[0].set_ylabel("Residual (s)")
+    axes[0].set_title("Clock sync residuals")
+    axes[0].axhline(0.0, color="gray", linewidth=0.8, linestyle="--")
+
+    axes[1].hist(residuals, bins=24, color="tab:orange", alpha=0.8)
+    axes[1].set_xlabel("Residual (s)")
+    axes[1].set_ylabel("Count")
+    axes[1].set_title("Residual histogram")
+
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    return out_path
+
+
 # --- Decoy-State Plotting ---
 
 def plot_decoy_key_rate_vs_loss(
