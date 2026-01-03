@@ -2788,6 +2788,17 @@ def _run_calibration_fit(args: argparse.Namespace) -> None:
             "telemetry_path": args.telemetry,
             "eta_base": args.eta_base,
         },
+        "model_card": {
+            "fit": {
+                "r2": float(fit_quality["r2"]),
+                "param_uncertainty": fit_quality["parameter_uncertainty"],
+            },
+            "fim": {
+                "cond": float(fit_quality["condition_number"]),
+                "identifiable": bool(fit_quality["identifiable"]),
+            },
+            "identifiable": bool(fit_quality["identifiable"]),
+        },
         "fit_quality": fit_quality,
         "residual_diagnostics": residual_diag,
         "artifacts": {
@@ -2795,6 +2806,10 @@ def _run_calibration_fit(args: argparse.Namespace) -> None:
             "calibration_residuals": "figures/calibration_residuals.png",
         },
     }
+    if not fit_quality.get("identifiable", True):
+        card_report["warnings"] = [
+            "identifiability_low: avoid attributing anomalies to residuals without stronger constraints",
+        ]
     card_path = outdir / "reports" / "latest_calibration_card.json"
     with open(card_path, "w") as f:
         json.dump(card_report, f, indent=2)
@@ -2815,6 +2830,10 @@ def _run_calibration_fit(args: argparse.Namespace) -> None:
             "calibration_residuals": "figures/calibration_residuals.png",
         },
     }
+    if not fit_quality.get("identifiable", True):
+        diagnostics_report["warnings"] = [
+            "identifiability_low: residual structure may reflect parameter degeneracy",
+        ]
     diagnostics_path = outdir / "reports" / "latest_calibration_diagnostics.json"
     with open(diagnostics_path, "w") as f:
         json.dump(diagnostics_report, f, indent=2)
