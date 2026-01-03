@@ -4,7 +4,7 @@ Telemetry calibration fitting for detector/background parameters.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 from .telemetry import TelemetryRecord
@@ -18,6 +18,9 @@ class FitResult:
     flip_prob: float
     rmse: float
     residual_std: float
+    clock_offset_s: Optional[float] = None
+    pointing_jitter_sigma: Optional[float] = None
+    background_rate: Optional[float] = None
 
 
 def predict_qber(
@@ -70,6 +73,9 @@ def fit_telemetry_parameters(
         flip_prob=float(flip_prob),
         rmse=float(best_rmse),
         residual_std=residual_std,
+        clock_offset_s=_estimate_clock_offset(records),
+        pointing_jitter_sigma=_estimate_pointing_jitter(records),
+        background_rate=_estimate_background_rate(records),
     )
 
 
@@ -99,3 +105,43 @@ def predict_with_uncertainty(
             "qber_ci_high": float(ci_high),
         })
     return out
+
+
+def _estimate_clock_offset(records: List[TelemetryRecord]) -> Optional[float]:
+    offsets = []
+    for record in records:
+        hist = record.coincidence_histogram
+        bin_s = record.coincidence_bin_seconds
+        if not hist or bin_s is None:
+            continue
+        center = (len(hist) - 1) / 2.0
+        peak_idx = int(np.argmax(hist))
+        offsets.append((peak_idx - center) * float(bin_s))
+    if not offsets:
+        return None
+    return float(np.mean(offsets))
+
+
+def _estimate_pointing_jitter(records: List[TelemetryRecord]) -> Optional[float]:
+    sigmas = []
+    for record in records:
+        series = record.transmittance_series
+        if not series:
+            continue
+        sigmas.append(float(np.std(series, ddof=1)) if len(series) > 1 else 0.0)
+    if not sigmas:
+        return None
+    return float(np.mean(sigmas))
+
+
+def _estimate_background_rate(records: List[TelemetryRecord]) -> Optional[float]:
+    rates = []
+    for record in records:
+        if record.background_rate is not None:
+            rates.append(float(record.background_rate))
+            continue
+        if record.off_window_counts is not None and record.off_window_seconds:
+            rates.append(float(record.off_window_counts) / float(record.off_window_seconds))
+    if not rates:
+        return None
+    return float(np.mean(rates))

@@ -54,3 +54,38 @@ def test_load_telemetry_json(tmp_path: Path):
     assert records[0].loss_db == 20.0
     assert records[0].qber_mean == 0.03
     assert records[0].n_sent == 1000
+
+
+def test_fit_instrument_params_from_telemetry():
+    eta_base = 0.2
+    record = TelemetryRecord(
+        loss_db=20.0,
+        qber_mean=predict_qber(
+            loss_db=20.0,
+            eta_scale=0.9,
+            p_bg=1e-4,
+            flip_prob=0.01,
+            eta_base=eta_base,
+        ),
+        coincidence_histogram=[0, 1, 6, 2, 1, 0, 0],
+        coincidence_bin_seconds=1e-9,
+        off_window_counts=120.0,
+        off_window_seconds=12.0,
+        transmittance_series=[0.09, 0.1, 0.11, 0.1],
+    )
+
+    fit = fit_telemetry_parameters(
+        records=[record],
+        eta_base=eta_base,
+        p_bg_grid=np.array([1e-4]),
+        flip_grid=np.array([0.01]),
+        eta_scale_grid=np.array([0.9]),
+    )
+
+    assert fit.clock_offset_s is not None
+    assert abs(fit.clock_offset_s - (-1e-9)) <= 1e-12
+    assert fit.background_rate is not None
+    assert abs(fit.background_rate - 10.0) <= 1e-9
+    assert fit.pointing_jitter_sigma is not None
+    expected_sigma = float(np.std(record.transmittance_series, ddof=1))
+    assert abs(fit.pointing_jitter_sigma - expected_sigma) <= 1e-12

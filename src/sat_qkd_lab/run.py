@@ -2032,6 +2032,12 @@ def _run_calibration_fit(args: argparse.Namespace) -> None:
         "rmse": fit.rmse,
         "residual_std": fit.residual_std,
     }
+    if fit.clock_offset_s is not None:
+        params_output["clock_offset_s"] = fit.clock_offset_s
+    if fit.pointing_jitter_sigma is not None:
+        params_output["pointing_jitter_sigma"] = fit.pointing_jitter_sigma
+    if fit.background_rate is not None:
+        params_output["background_rate"] = fit.background_rate
 
     params_path = outdir / "reports" / "calibration_params.json"
     with open(params_path, "w") as f:
