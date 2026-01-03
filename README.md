@@ -91,10 +91,13 @@ test -x .venv/bin/python || $PY -m venv .venv
 │  ├─ telemetry.py
 │  ├─ timetags.py
 │  ├─ timing.py
+│  ├─ clock_sync.py
 │  ├─ event_stream.py
 │  ├─ pass_model.py
 │  ├─ pointing.py
 │  ├─ optics.py
+│  ├─ ou_fading.py
+│  ├─ basis_bias.py
 │  ├─ fim_identifiability.py
 │  ├─ change_points.py
 │  ├─ constellation.py
@@ -140,6 +143,9 @@ Notes: `docs/` contains local prompt artifacts and may be gitignored for archiva
 ./py -m sat_qkd_lab.run constellation-sweep --n-sats 4 --n-stations 2 --outdir .
 ./py -m sat_qkd_lab.run experiment-run --bell-mode --outdir .
 ./py -m sat_qkd_lab.run experiment-run --ingest-tags tags.json --outdir .
+./py -m sat_qkd_lab.run clock-sync --outdir .
+./py -m sat_qkd_lab.run fading-ou --outdir .
+./py -m sat_qkd_lab.run basis-bias --outdir .
 ```
 
 Command outputs:
@@ -152,11 +158,14 @@ Command outputs:
 - `experiment-run --ingest-tags`: ingests time-tag files (JSON/CSV) and adds HIL validation diffs.
 - `forecast-run`: `reports/forecast_blinded.json` (and `reports/forecast_unblinded.json` if `--unblind`).
 - `forecast-run --estimate-identifiability`: adds FIM condition number, covariance, and metric CIs.
-- `calibration-fit`: `reports/calibration_fit.json` and `reports/calibration_params.json`.
+- `calibration-fit`: `reports/calibration_fit.json`, `reports/calibration_params.json`, `reports/latest_calibration_card.json`, `figures/calibration_quality_card.png`.
 - `coincidence-sim`: `reports/latest_coincidence.json`, `figures/car_vs_loss.png` (plus CHSH/visibility plots if enabled).
   - Timing flags: `--clock-offset-s`, `--clock-drift-ppm`, `--tdc-ps`, `--estimate-offset`.
   - Stream-mode flags: `--stream-mode`, `--gate-duty-cycle`, `--dead-time-ns`, `--afterpulse-prob`.
 - `constellation-sweep`: `reports/constellation_inventory.json`, `figures/inventory_timeseries.png`, `figures/inventory_flow.png`.
+- `clock-sync`: `reports/latest_clock_sync.json`, `figures/clock_sync_diagnostics.png`.
+- `fading-ou`: `reports/latest_fading_ou.json`, `figures/pass_fading_evolution.png`, `figures/secure_window_fragmentation.png`.
+- `basis-bias`: `reports/latest_basis_bias.json`, `figures/basis_bias_vs_elevation.png`.
 
 ## Outputs
 
@@ -167,10 +176,19 @@ Phase 3 outputs:
 - Pointing/fading artifacts: `figures/pointing_lock_state.png`, `figures/transmittance_with_pointing.png`, `figures/eta_fading_samples.png`, `figures/secure_window_fading_impact.png`.
 - Optics/background parameters: `filter_bandwidth_nm`, `detector_temp_c`, and derived background rates in pass/coincidence reports.
 - Calibration outputs: `reports/calibration_fit.json` includes clock offset, pointing jitter proxy, and background rate when present.
+- Phase 5 diagnostics: `reports/latest_clock_sync.json`, `reports/latest_fading_ou.json`, `reports/latest_basis_bias.json`, `reports/latest_calibration_card.json`.
 
 Realism knobs (units):
 - Timing jitter σ [ps], coincidence window τc [ps], TDC resolution [ps], clock drift [ppm].
 - Filter bandwidth [nm], detector temperature [°C], pointing jitter [µrad].
+
+## Units & contract hygiene
+
+Reports include explicit units (Hz, seconds, bits, bps, and °C where applicable). Blinded outputs never include group labels unless unblinding is enabled. JSON keys are append-only to keep downstream tooling stable.
+
+## Timing discipline (anti-self-deception)
+
+Clock sync is estimated from beacons and then locked. Coincidence/QKD scoring should not tune offsets on the evaluation stream unless sync is locked, so tests reflect field behavior.
 
 ## Calibration confidence hygiene
 
@@ -188,7 +206,7 @@ Use `experiment-run --ingest-tags tags.json` to ingest time-tag logs for validat
 
 Install: `./py -m pip install -e ".[dashboard]"`
 Launch: `./py -m sat_qkd_lab.dashboard`
-The dashboard reads/writes the latest reports and figures, including Phase 3 artifacts. It is blinded by default; unblinding requires an explicit toggle.
+The dashboard reads/writes the latest reports and figures, including Phase 5 artifacts, and writes `reports/latest_dashboard.json` with a plot index. It is blinded by default; unblinding requires an explicit toggle.
 
 ## Artifacts & provenance
 
