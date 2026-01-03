@@ -54,6 +54,7 @@ from .plotting import (
     plot_secure_window_fragmentation,
     plot_basis_bias_vs_elevation,
     plot_calibration_quality_card,
+    plot_polarization_drift_vs_time,
 )
 from .free_space_link import FreeSpaceLinkParams, generate_elevation_profile
 from .detector import DetectorParams, DEFAULT_DETECTOR
@@ -104,6 +105,12 @@ from .clock_sync import (
 )
 from .ou_fading import simulate_ou_transmittance, compute_outage_clusters
 from .basis_bias import BasisBiasParams, basis_bias_from_elevation, basis_probs_from_bias
+from .polarization_drift import (
+    PolarizationDriftParams,
+    CompensationParams,
+    simulate_polarization_drift,
+    compensate_polarization_drift,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -357,6 +364,17 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Optical filter bandwidth in nm")
     ps.add_argument("--detector-temp-c", type=float, default=20.0,
                     help="Detector temperature in C")
+    # Polarization drift + compensation
+    ps.add_argument("--pol-drift", action="store_true",
+                    help="Enable polarization drift model")
+    ps.add_argument("--pol-drift-sigma-deg", type=float, default=1.0,
+                    help="Polarization drift sigma in degrees")
+    ps.add_argument("--pol-drift-seed", type=int, default=0,
+                    help="Seed for polarization drift")
+    ps.add_argument("--pol-compensate", action="store_true",
+                    help="Enable polarization compensation loop")
+    ps.add_argument("--pol-comp-lag-s", type=float, default=5.0,
+                    help="Compensation lag in seconds")
     # Time-correlated background process
     ps.add_argument("--background-process", action="store_true",
                     help="Enable time-correlated background process")
@@ -710,6 +728,9 @@ def _validate_args(args: argparse.Namespace) -> None:
         validate_float("bg-ou-sigma", args.bg_ou_sigma, min_value=0.0)
         validate_float("bg-ou-tau-s", args.bg_ou_tau_s, min_value=0.0)
         validate_seed(args.bg_ou_seed)
+        validate_float("pol-drift-sigma-deg", args.pol_drift_sigma_deg, min_value=0.0)
+        validate_seed(args.pol_drift_seed)
+        validate_float("pol-comp-lag-s", args.pol_comp_lag_s, min_value=0.0)
         time_s, _ = generate_elevation_profile(
             max_elevation_deg=args.max_elevation,
             min_elevation_deg=args.min_elevation,
@@ -1598,6 +1619,28 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
             seed=args.bg_ou_seed,
         )
         background_scale = simulate_background_scales(time_s, bg_params)
+    polarization_angle = None
+    polarization_raw = None
+    polarization_est = None
+    if args.pol_drift:
+        drift_params = PolarizationDriftParams(
+            enabled=True,
+            sigma_deg=args.pol_drift_sigma_deg,
+            seed=args.pol_drift_seed,
+        )
+        polarization_raw = simulate_polarization_drift(time_s, drift_params)
+        if args.pol_compensate:
+            comp_params = CompensationParams(
+                enabled=True,
+                lag_seconds=args.pol_comp_lag_s,
+            )
+            polarization_angle, polarization_est = compensate_polarization_drift(
+                time_s,
+                polarization_raw,
+                comp_params,
+            )
+        else:
+            polarization_angle = polarization_raw
 
     pulses_schedule, total_sent = _resolve_pass_pulse_accounting(args, len(time_s))
     rep_rate_hz = args.rep_rate if args.rep_rate is not None else total_sent / args.pass_duration
@@ -1669,6 +1712,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         fading=fading_params,
         pointing=pointing_params,
         background_scale=background_scale,
+        polarization_angle_rad=polarization_angle,
     )
 
     summary_base = None
@@ -1747,6 +1791,17 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
             str(outdir / "figures" / "background_rate_vs_time.png"),
         )
         print("Plot:", bg_plot_path)
+    if args.pol_drift and polarization_raw is not None:
+        corrected_deg = None
+        if polarization_angle is not None and polarization_angle is not polarization_raw:
+            corrected_deg = np.rad2deg(polarization_angle)
+        drift_plot_path = plot_polarization_drift_vs_time(
+            np.array(time_s, dtype=float),
+            np.rad2deg(polarization_raw),
+            corrected_deg,
+            str(outdir / "figures" / "polarization_drift_vs_time.png"),
+        )
+        print("Plot:", drift_plot_path)
 
     if args.filter_bandwidth_nm > 0:
         bw_vals = np.linspace(0.5, max(0.5, args.filter_bandwidth_nm * 2.0), 10)
@@ -1843,6 +1898,14 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         pass_time_series["background_rate_hz"] = [
             float(p) * rep_rate_hz for p in pass_time_series["background_prob"]
         ]
+    if args.pol_drift and polarization_raw is not None:
+        pass_time_series["polarization_angle_deg"] = [
+            float(v) for v in np.rad2deg(polarization_raw)
+        ]
+        if polarization_angle is not None and polarization_angle is not polarization_raw:
+            pass_time_series["polarization_angle_comp_deg"] = [
+                float(v) for v in np.rad2deg(polarization_angle)
+            ]
     def _count_secure_fragments(records):
         fragments = 0
         in_window = False
@@ -1903,6 +1966,8 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
     ]
     if args.background_process:
         assumptions.append("background_process uses OU time-correlated scaling")
+    if args.pol_drift:
+        assumptions.append("polarization_drift uses random-walk angle with optional lagged compensation")
     if args.finite_key:
         assumptions.append("finite_key enabled implies Hoeffding bounds for QBER")
     if args.fading:
@@ -1917,6 +1982,8 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
     }
     if args.background_process:
         plots["background_rate_vs_time"] = "figures/background_rate_vs_time.png"
+    if args.pol_drift:
+        plots["polarization_drift_vs_time"] = "figures/polarization_drift_vs_time.png"
     if args.fading:
         plots["eta_fading_samples"] = "figures/eta_fading_samples.png"
         plots["secure_window_fading_impact"] = "figures/secure_window_fading_impact.png"
@@ -1956,6 +2023,15 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
                     "sigma": float(args.bg_ou_sigma),
                     "tau_seconds": float(args.bg_ou_tau_s),
                     "seed": int(args.bg_ou_seed),
+                },
+            },
+            "polarization_drift": {
+                "enabled": bool(args.pol_drift),
+                "sigma_deg": float(args.pol_drift_sigma_deg),
+                "seed": int(args.pol_drift_seed),
+                "compensation": {
+                    "enabled": bool(args.pol_compensate),
+                    "lag_seconds": float(args.pol_comp_lag_s),
                 },
             },
             "optical_chain": {
@@ -2009,6 +2085,17 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         },
         "assumptions": assumptions,
     }
+    if args.pol_drift:
+        pol_section = {
+            "enabled": bool(args.pol_drift),
+            "angle_deg": [float(v) for v in np.rad2deg(polarization_raw)] if polarization_raw is not None else [],
+            "angle_comp_deg": [float(v) for v in np.rad2deg(polarization_angle)] if polarization_angle is not None else [],
+            "qber_z": [float(r["qber_z"]) for r in records_pass if "qber_z" in r],
+            "qber_x": [float(r["qber_x"]) for r in records_pass if "qber_x" in r],
+            "matrix_z": [r["matrix_z"] for r in records_pass if "matrix_z" in r],
+            "matrix_x": [r["matrix_x"] for r in records_pass if "matrix_x" in r],
+        }
+        pass_report["polarization_drift"] = pol_section
     if fading_variance is not None:
         pass_report["summary"]["fading_variance"] = fading_variance
     if fragment_stats is not None:

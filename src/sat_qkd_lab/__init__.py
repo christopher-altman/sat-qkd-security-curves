@@ -32,9 +32,11 @@ __all__ = [
     "constellation",
     "fading_samples",
     "hil_adapters",
+    "background_process",
     "clock_sync",
     "ou_fading",
     "basis_bias",
+    "polarization_drift",
 ]
 
 from . import free_space_link  # makes sat_qkd_lab.free_space_link available

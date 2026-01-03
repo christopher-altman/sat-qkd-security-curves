@@ -21,6 +21,7 @@ from .free_space_link import (
 from .helpers import h2
 from .sweep import compute_headroom
 from .pointing import PointingParams, simulate_pointing_profile
+from .polarization_drift import adjust_qber_for_angle, coincidence_matrix_from_qber
 
 
 @dataclass(frozen=True)
@@ -119,6 +120,7 @@ def compute_pass_records(
     fading: Optional[FadingParams] = None,
     pointing: Optional[PointingParams] = None,
     background_scale: Optional[Sequence[float]] = None,
+    polarization_angle_rad: Optional[Sequence[float]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Compute per-time-step pass records and summary outputs.
@@ -176,6 +178,11 @@ def compute_pass_records(
                 p_sig = det.eta * eta_ch
                 p_click = p_sig + p_bg_eff - p_sig * p_bg_eff
                 qber_sample = expected_qber(p_sig, p_bg_eff, params.flip_prob)
+                if polarization_angle_rad is not None:
+                    idx = int(round(t_s / params.dt_seconds)) if params.dt_seconds > 0 else 0
+                    idx = min(max(idx, 0), len(polarization_angle_rad) - 1)
+                    angle = float(polarization_angle_rad[idx])
+                    qber_sample = adjust_qber_for_angle(qber_sample, angle)
                 n_received = int(round(n_sent * p_click))
                 n_sifted = int(round(n_received * 0.5))
                 if finite_key is not None:
@@ -211,6 +218,11 @@ def compute_pass_records(
             p_sig = det.eta * eta_ch
             p_click = p_sig + p_bg_eff - p_sig * p_bg_eff
             qber_mean = expected_qber(p_sig, p_bg_eff, params.flip_prob)
+            if polarization_angle_rad is not None:
+                idx = int(round(t_s / params.dt_seconds)) if params.dt_seconds > 0 else 0
+                idx = min(max(idx, 0), len(polarization_angle_rad) - 1)
+                angle = float(polarization_angle_rad[idx])
+                qber_mean = adjust_qber_for_angle(qber_mean, angle)
             n_received = int(round(n_sent * p_click))
             n_sifted = int(round(n_received * 0.5))
             n_errors = int(round((0.0 if qber_mean != qber_mean else qber_mean) * n_sifted))
@@ -252,6 +264,21 @@ def compute_pass_records(
         key_rate_bps = params.rep_rate_hz * key_rate_per_pulse
         secret_bits_dt = key_rate_bps * params.dt_seconds
 
+        qber_z = None
+        qber_x = None
+        matrix_z = None
+        matrix_x = None
+        if polarization_angle_rad is not None:
+            idx = int(round(t_s / params.dt_seconds)) if params.dt_seconds > 0 else 0
+            idx = min(max(idx, 0), len(polarization_angle_rad) - 1)
+            angle = float(polarization_angle_rad[idx])
+            qber_z = adjust_qber_for_angle(qber_mean, angle, phase_offset_rad=0.0)
+            qber_x = adjust_qber_for_angle(qber_mean, angle, phase_offset_rad=0.25 * math.pi)
+            p_click_mean = det.eta * eta_ch_mean + p_bg_eff - det.eta * eta_ch_mean * p_bg_eff
+            n_sifted_mean = int(round(n_sent * 0.5 * p_click_mean))
+            matrix_z = coincidence_matrix_from_qber(n_sifted_mean, qber_z)
+            matrix_x = coincidence_matrix_from_qber(n_sifted_mean, qber_x)
+
         record = {
             "time_s": float(t_s),
             "elevation_deg": float(el),
@@ -269,6 +296,11 @@ def compute_pass_records(
         }
         if background_scale is not None:
             record["background_prob"] = float(p_bg_eff)
+        if qber_z is not None and qber_x is not None:
+            record["qber_z"] = float(qber_z)
+            record["qber_x"] = float(qber_x)
+            record["matrix_z"] = matrix_z
+            record["matrix_x"] = matrix_x
         if lock_state is not None and trans_multiplier is not None:
             idx = int(round(t_s / params.dt_seconds)) if params.dt_seconds > 0 else 0
             idx = min(max(idx, 0), len(lock_state) - 1)
@@ -348,6 +380,11 @@ def records_to_time_series(
         time_series["background_prob"] = [float(r["background_prob"]) for r in records]
     if "pointing_locked" in records[0]:
         time_series["pointing_locked"] = [int(bool(r.get("pointing_locked"))) for r in records]
+    if "qber_z" in records[0]:
+        time_series["qber_z"] = [float(r["qber_z"]) for r in records]
+        time_series["qber_x"] = [float(r["qber_x"]) for r in records]
+        time_series["matrix_z"] = [r["matrix_z"] for r in records]
+        time_series["matrix_x"] = [r["matrix_x"] for r in records]
     if include_ci and "qber_ci_low" in records[0]:
         time_series["qber_ci_low"] = [float(r["qber_ci_low"]) for r in records]
         time_series["qber_ci_high"] = [float(r["qber_ci_high"]) for r in records]

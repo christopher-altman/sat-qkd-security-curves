@@ -1083,6 +1083,28 @@ def plot_car_vs_time(
     return out_path
 
 
+def plot_polarization_drift_vs_time(
+    time_s: np.ndarray,
+    angle_deg: np.ndarray,
+    corrected_deg: np.ndarray | None,
+    out_path: str,
+) -> str:
+    """
+    Plot polarization drift angle vs time.
+    """
+    fig, ax = plt.subplots()
+    ax.plot(time_s, angle_deg, color="steelblue", label="drift")
+    if corrected_deg is not None:
+        ax.plot(time_s, corrected_deg, color="darkorange", label="compensated")
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Angle (deg)")
+    ax.set_title("Polarization drift vs time")
+    ax.legend(loc="best")
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    return out_path
+
+
 def plot_decoy_comparison(
     records_bb84: Sequence[Dict[str, Any]],
     records_decoy: Sequence[Dict[str, Any]],
