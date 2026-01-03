@@ -15,6 +15,7 @@ class AttackConfig:
     timeshift_bias: float = 0.0
     blinding_mode: BlindingMode = "loud"
     blinding_prob: float = 0.05
+    leakage_fraction: float = 0.0
 
     def __post_init__(self) -> None:
         if self.mu < 0.0:
@@ -25,6 +26,8 @@ class AttackConfig:
             raise ValueError(f"blinding_mode must be loud or stealth, got {self.blinding_mode}")
         if not 0.0 <= self.blinding_prob <= 1.0:
             raise ValueError(f"blinding_prob must be in [0, 1], got {self.blinding_prob}")
+        if not 0.0 <= self.leakage_fraction <= 1.0:
+            raise ValueError(f"leakage_fraction must be in [0, 1], got {self.leakage_fraction}")
 
 
 @dataclass
@@ -98,6 +101,8 @@ def apply_attack(
 
     if config.attack == "pns":
         meta["pns_multi_photon_frac"] = poisson_multi_photon_fraction(config.mu)
+    if config.leakage_fraction > 0.0:
+        meta["leakage_fraction"] = float(config.leakage_fraction)
 
     return AttackOutcome(
         incoming_bits=incoming_bits,

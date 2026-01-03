@@ -74,6 +74,8 @@ def sweep_loss(
             "key_rate_per_pulse": s.key_rate_per_pulse,
             "n_secret_est": s.n_secret_est,
             "aborted": bool(s.aborted),
+            "leakage_fraction": s.meta.get("leakage_fraction", 0.0),
+            "leakage_budget_bits": s.meta.get("leakage_budget_bits", 0.0),
         })
     return out
 
