@@ -46,6 +46,8 @@ from .plotting import (
     plot_pointing_lock_state,
     plot_transmittance_with_pointing,
     plot_background_rate_vs_bandwidth,
+    plot_background_rate_vs_time,
+    plot_car_vs_time,
     plot_clock_sync_diagnostics,
     plot_sync_lock_state,
     plot_fading_evolution,
@@ -91,6 +93,7 @@ from .optics import OpticalParams, background_rate_hz, dark_count_rate_hz
 from .constellation import schedule_passes, simulate_inventory
 from .fading_samples import sample_fading_transmittance, plot_eta_samples
 from .hil_adapters import ingest_timetag_file, playback_pass, compute_validation_diffs
+from .background_process import BackgroundProcessParams, simulate_background_scales
 from .clock_sync import (
     generate_beacon_times,
     apply_clock_model,
@@ -354,6 +357,17 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Optical filter bandwidth in nm")
     ps.add_argument("--detector-temp-c", type=float, default=20.0,
                     help="Detector temperature in C")
+    # Time-correlated background process
+    ps.add_argument("--background-process", action="store_true",
+                    help="Enable time-correlated background process")
+    ps.add_argument("--bg-ou-mean", type=float, default=1.0,
+                    help="Background OU mean multiplier (default: 1.0)")
+    ps.add_argument("--bg-ou-sigma", type=float, default=0.2,
+                    help="Background OU sigma (default: 0.2)")
+    ps.add_argument("--bg-ou-tau-s", type=float, default=60.0,
+                    help="Background OU correlation time in seconds")
+    ps.add_argument("--bg-ou-seed", type=int, default=0,
+                    help="Seed for background process")
 
     # --- experiment-run command ---
     ex = sub.add_parser("experiment-run", help="Run blinded intervention A/B experiment harness.")
@@ -513,6 +527,16 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Optical filter bandwidth in nm")
     cs.add_argument("--detector-temp-c", type=float, default=20.0,
                     help="Detector temperature in C")
+    cs.add_argument("--background-process", action="store_true",
+                    help="Enable time-correlated background process")
+    cs.add_argument("--bg-ou-mean", type=float, default=1.0,
+                    help="Background OU mean multiplier (default: 1.0)")
+    cs.add_argument("--bg-ou-sigma", type=float, default=0.2,
+                    help="Background OU sigma (default: 0.2)")
+    cs.add_argument("--bg-ou-tau-s", type=float, default=60.0,
+                    help="Background OU correlation time in seconds")
+    cs.add_argument("--bg-ou-seed", type=int, default=0,
+                    help="Seed for background process")
     cs.add_argument("--seed", type=int, default=0)
     cs.add_argument("--outdir", type=str, default=".",
                     help="Output directory for figures/reports (default: .)")
@@ -682,6 +706,10 @@ def _validate_args(args: argparse.Namespace) -> None:
             validate_seed(args.pointing_seed)
         validate_float("filter-bandwidth-nm", args.filter_bandwidth_nm, min_value=0.01)
         validate_float("detector-temp-c", args.detector_temp_c, min_value=-80.0, max_value=80.0)
+        validate_float("bg-ou-mean", args.bg_ou_mean, min_value=0.0)
+        validate_float("bg-ou-sigma", args.bg_ou_sigma, min_value=0.0)
+        validate_float("bg-ou-tau-s", args.bg_ou_tau_s, min_value=0.0)
+        validate_seed(args.bg_ou_seed)
         time_s, _ = generate_elevation_profile(
             max_elevation_deg=args.max_elevation,
             min_elevation_deg=args.min_elevation,
@@ -744,6 +772,10 @@ def _validate_args(args: argparse.Namespace) -> None:
         validate_float("dead-time-ns", args.dead_time_ns, min_value=0.0)
         validate_float("filter-bandwidth-nm", args.filter_bandwidth_nm, min_value=0.01)
         validate_float("detector-temp-c", args.detector_temp_c, min_value=-80.0, max_value=80.0)
+        validate_float("bg-ou-mean", args.bg_ou_mean, min_value=0.0)
+        validate_float("bg-ou-sigma", args.bg_ou_sigma, min_value=0.0)
+        validate_float("bg-ou-tau-s", args.bg_ou_tau_s, min_value=0.0)
+        validate_seed(args.bg_ou_seed)
     elif args.cmd == "calibration-fit":
         if not Path(args.telemetry).exists():
             raise FileNotFoundError(f"Telemetry file not found: {args.telemetry}")
@@ -1556,6 +1588,16 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         time_step_s=args.time_step,
         pass_duration_s=args.pass_duration,
     )
+    background_scale = None
+    if args.background_process:
+        bg_params = BackgroundProcessParams(
+            enabled=True,
+            mean=args.bg_ou_mean,
+            sigma=args.bg_ou_sigma,
+            tau_seconds=args.bg_ou_tau_s,
+            seed=args.bg_ou_seed,
+        )
+        background_scale = simulate_background_scales(time_s, bg_params)
 
     pulses_schedule, total_sent = _resolve_pass_pulse_accounting(args, len(time_s))
     rep_rate_hz = args.rep_rate if args.rep_rate is not None else total_sent / args.pass_duration
@@ -1626,6 +1668,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         calibration=calibration,
         fading=fading_params,
         pointing=pointing_params,
+        background_scale=background_scale,
     )
 
     summary_base = None
@@ -1637,6 +1680,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
             finite_key=finite_key_params,
             calibration=calibration,
             fading=None,
+            background_scale=background_scale,
         )
 
     # Generate plots
@@ -1691,6 +1735,18 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         str(outdir / "figures" / "loss_vs_elevation.png"),
     )
     print("Plot:", loss_plot_path)
+
+    if args.background_process:
+        bg_rate_series = np.array(
+            [float(r.get("background_prob", 0.0)) * rep_rate_hz for r in records_pass],
+            dtype=float,
+        )
+        bg_plot_path = plot_background_rate_vs_time(
+            np.array(time_s, dtype=float),
+            bg_rate_series,
+            str(outdir / "figures" / "background_rate_vs_time.png"),
+        )
+        print("Plot:", bg_plot_path)
 
     if args.filter_bandwidth_nm > 0:
         bw_vals = np.linspace(0.5, max(0.5, args.filter_bandwidth_nm * 2.0), 10)
@@ -1783,6 +1839,10 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         records_pass,
         include_ci=finite_key_params is not None or args.fading,
     )
+    if args.background_process and "background_prob" in pass_time_series:
+        pass_time_series["background_rate_hz"] = [
+            float(p) * rep_rate_hz for p in pass_time_series["background_prob"]
+        ]
     def _count_secure_fragments(records):
         fragments = 0
         in_window = False
@@ -1819,6 +1879,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
                     calibration=calibration,
                     fading=fading_trial,
                     pointing=pointing_params,
+                    background_scale=background_scale,
                 )
                 fragment_trials.append(_count_secure_fragments(recs_trial))
             frag_mean = float(np.mean(fragment_trials)) if fragment_trials else 0.0
@@ -1840,6 +1901,8 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         "loss_db derived from elevation profile using elevation_to_loss model",
         f"background_model daynight mode set to {background_mode}",
     ]
+    if args.background_process:
+        assumptions.append("background_process uses OU time-correlated scaling")
     if args.finite_key:
         assumptions.append("finite_key enabled implies Hoeffding bounds for QBER")
     if args.fading:
@@ -1852,6 +1915,8 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         "key_rate_vs_elevation": "figures/key_rate_vs_elevation.png",
         "secure_window": "figures/secure_window.png",
     }
+    if args.background_process:
+        plots["background_rate_vs_time"] = "figures/background_rate_vs_time.png"
     if args.fading:
         plots["eta_fading_samples"] = "figures/eta_fading_samples.png"
         plots["secure_window_fading_impact"] = "figures/secure_window_fading_impact.png"
@@ -1881,6 +1946,16 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
                 "type": "daynight",
                 "params": {
                     "mode": background_mode,
+                },
+            },
+            "background_process": {
+                "enabled": bool(args.background_process),
+                "type": "ou",
+                "params": {
+                    "mean": float(args.bg_ou_mean),
+                    "sigma": float(args.bg_ou_sigma),
+                    "tau_seconds": float(args.bg_ou_tau_s),
+                    "seed": int(args.bg_ou_seed),
                 },
             },
             "optical_chain": {
@@ -1924,6 +1999,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
             "secret_bits": "bits",
             "qber": "unitless",
             "fading_variance": "unitless",
+            "background_rate_hz": "Hz",
         },
         "time_series": pass_time_series,
         "summary": summary_pass,
@@ -2065,11 +2141,27 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
         detector_temp_c=args.detector_temp_c,
         mode="night",
     )
-    bg_rate_effective = background_rate_hz(optical_params, args.background_rate_hz)
-    bg_rate_effective = dark_count_rate_hz(optical_params, bg_rate_effective)
+    base_bg_rate = background_rate_hz(optical_params, args.background_rate_hz)
+    base_bg_rate = dark_count_rate_hz(optical_params, base_bg_rate)
+    time_series = np.linspace(0.0, args.duration, args.steps) if args.steps > 1 else np.array([0.0])
+    background_scale = None
+    if args.background_process:
+        bg_params = BackgroundProcessParams(
+            enabled=True,
+            mean=args.bg_ou_mean,
+            sigma=args.bg_ou_sigma,
+            tau_seconds=args.bg_ou_tau_s,
+            seed=args.bg_ou_seed,
+        )
+        background_scale = simulate_background_scales(time_series, bg_params)
+    background_rate_series = []
 
     for idx, loss_db in enumerate(loss_values):
         eta = 10 ** (-float(loss_db) / 10.0)
+        bg_rate_effective = base_bg_rate
+        if background_scale is not None:
+            bg_rate_effective = float(base_bg_rate * background_scale[idx])
+        background_rate_series.append(float(bg_rate_effective))
         expected_pairs = args.pair_rate_hz * args.duration * (eta ** 2)
         n_pairs = int(rng.poisson(expected_pairs))
 
@@ -2163,6 +2255,7 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
             "accidentals": int(result.accidentals),
             "car": float(result.car),
             "matrices": result.matrices,
+            "background_rate_hz": float(bg_rate_effective),
             "visibility": float(obs.visibility),
             "chsh_s": float(obs.chsh_s),
             "chsh_sigma": float(obs.chsh_sigma),
@@ -2186,6 +2279,19 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
         str(outdir / "figures" / "visibility_vs_loss.png"),
     )
     print("Plot:", vis_plot_path)
+    if args.background_process:
+        bg_plot_path = plot_background_rate_vs_time(
+            np.array(time_series, dtype=float),
+            np.array(background_rate_series, dtype=float),
+            str(outdir / "figures" / "background_rate_vs_time.png"),
+        )
+        print("Plot:", bg_plot_path)
+        car_plot_path = plot_car_vs_time(
+            np.array(time_series, dtype=float),
+            np.array([r["car"] for r in records], dtype=float),
+            str(outdir / "figures" / "car_vs_time.png"),
+        )
+        print("Plot:", car_plot_path)
     lock_plot_path = plot_sync_lock_state(
         duration_s=float(args.duration),
         locked=sync_locked,
@@ -2212,7 +2318,7 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
             "duration_seconds": args.duration,
             "pair_rate_hz": args.pair_rate_hz,
             "background_rate_hz": args.background_rate_hz,
-            "background_rate_used": bg_rate_effective,
+            "background_rate_used": float(base_bg_rate),
             "jitter_ps": args.jitter_ps,
             "tau_ps": args.tau_ps,
             "dead_time_ps": args.dead_time_ps,
@@ -2247,7 +2353,17 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
         "optical_chain": {
             "filter_bandwidth_nm": float(args.filter_bandwidth_nm),
             "detector_temp_c": float(args.detector_temp_c),
-            "background_rate_used": float(bg_rate_effective),
+            "background_rate_used": float(base_bg_rate),
+        },
+        "background_process": {
+            "enabled": bool(args.background_process),
+            "type": "ou",
+            "params": {
+                "mean": float(args.bg_ou_mean),
+                "sigma": float(args.bg_ou_sigma),
+                "tau_seconds": float(args.bg_ou_tau_s),
+                "seed": int(args.bg_ou_seed),
+            },
         },
         "stream_model": {
             "enabled": bool(args.stream_mode),
@@ -2264,6 +2380,14 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
             "sync_lock_state": "figures/sync_lock_state.png",
         },
     }
+    if args.background_process:
+        report["background_time_series"] = {
+            "t_seconds": [float(t) for t in time_series],
+            "background_rate_hz": [float(r) for r in background_rate_series],
+            "car": [float(r["car"]) for r in records],
+        }
+        report["artifacts"]["background_rate_vs_time"] = "figures/background_rate_vs_time.png"
+        report["artifacts"]["car_vs_time"] = "figures/car_vs_time.png"
     if sync_params_path is not None:
         report["sync"]["params_path"] = sync_params_path
 

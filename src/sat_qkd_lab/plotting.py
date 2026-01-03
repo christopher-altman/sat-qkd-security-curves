@@ -1045,6 +1045,44 @@ def plot_background_rate_vs_bandwidth(
     return out_path
 
 
+def plot_background_rate_vs_time(
+    time_s: np.ndarray,
+    background_rate: np.ndarray,
+    out_path: str,
+) -> str:
+    """
+    Plot background rate vs time.
+    """
+    fig, ax = plt.subplots()
+    ax.plot(time_s, background_rate, color="steelblue")
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Background rate (Hz)")
+    ax.set_title("Background rate vs time")
+    ax.set_ylim(bottom=0.0)
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    return out_path
+
+
+def plot_car_vs_time(
+    time_s: np.ndarray,
+    car_values: np.ndarray,
+    out_path: str,
+) -> str:
+    """
+    Plot CAR vs time.
+    """
+    fig, ax = plt.subplots()
+    ax.plot(time_s, car_values, color="darkorange")
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("CAR")
+    ax.set_title("CAR vs time")
+    ax.set_ylim(bottom=0.0)
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    return out_path
+
+
 def plot_decoy_comparison(
     records_bb84: Sequence[Dict[str, Any]],
     records_decoy: Sequence[Dict[str, Any]],
