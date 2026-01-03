@@ -93,6 +93,16 @@ def _simulate_block_metrics(
     }
 
 
+def simulate_block_metrics(
+    label: str,
+    params: ExperimentParams,
+    rng: random.Random,
+    finite_key: Optional[FiniteKeyParams],
+) -> Dict[str, float]:
+    """Public wrapper for block metric simulation."""
+    return _simulate_block_metrics(label, params, rng, finite_key)
+
+
 def _difference_in_means(values_control: List[float], values_intervention: List[float]) -> Dict[str, Optional[float]]:
     """Compute difference-in-means and CI for two groups."""
     n_c = len(values_control)

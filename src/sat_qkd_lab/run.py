@@ -44,6 +44,7 @@ from .attacks import Attack, AttackConfig
 from .calibration import CalibrationModel
 from .pass_model import PassModelParams, compute_pass_records, records_to_time_series
 from .experiment import ExperimentParams, run_experiment
+from .forecast_harness import run_forecast_harness
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -285,6 +286,19 @@ def build_parser() -> argparse.ArgumentParser:
     ex.add_argument("--outdir", type=str, default=".",
                     help="Output directory for reports (default: .)")
 
+    # --- forecast-run command ---
+    fr = sub.add_parser("forecast-run", help="Run forecast ingestion + blinded scoring harness.")
+    fr.add_argument("--forecasts", type=str, required=True,
+                    help="Path to forecast JSON/CSV file")
+    fr.add_argument("--outdir", type=str, default=".",
+                    help="Output directory for reports (default: .)")
+    fr.add_argument("--seed", type=int, default=0)
+    fr.add_argument("--n-blocks", type=int, default=20)
+    fr.add_argument("--block-seconds", type=float, default=30.0)
+    fr.add_argument("--rep-rate-hz", type=float, default=1e8)
+    fr.add_argument("--unblind", action="store_true",
+                    help="Write unblinded forecast analysis output")
+
     return p
 
 
@@ -305,6 +319,8 @@ def main() -> None:
         _run_pass_sweep(args)
     elif args.cmd == "experiment-run":
         _run_experiment(args)
+    elif args.cmd == "forecast-run":
+        _run_forecast_run(args)
 
 
 def _validate_args(args: argparse.Namespace) -> None:
@@ -444,6 +460,13 @@ def _validate_args(args: argparse.Namespace) -> None:
         if args.finite_key:
             validate_float("eps-sec", args.eps_sec, min_value=0.0, max_value=1.0)
             validate_float("eps-cor", args.eps_cor, min_value=0.0, max_value=1.0)
+    elif args.cmd == "forecast-run":
+        validate_seed(args.seed)
+        validate_int("n-blocks", args.n_blocks, min_value=1)
+        validate_float("block-seconds", args.block_seconds, min_value=1e-9)
+        validate_float("rep-rate-hz", args.rep_rate_hz, min_value=1e-9)
+        if not Path(args.forecasts).exists():
+            raise FileNotFoundError(f"Forecasts file not found: {args.forecasts}")
 
 
 def _resolve_n_sent_for_sweep(args: argparse.Namespace) -> int:
@@ -1401,6 +1424,23 @@ def _run_experiment(args: argparse.Namespace) -> None:
     if args.unblind:
         print("Wrote:", outdir / "reports" / "schedule_unblinded.json")
     print("Wrote:", outdir / "reports" / "schedule_blinded.json")
+
+
+def _run_forecast_run(args: argparse.Namespace) -> None:
+    """Execute forecast ingestion + blinded scoring harness."""
+    outdir = Path(args.outdir)
+    run_forecast_harness(
+        forecasts_path=args.forecasts,
+        outdir=outdir,
+        seed=args.seed,
+        n_blocks=args.n_blocks,
+        block_seconds=args.block_seconds,
+        rep_rate_hz=args.rep_rate_hz,
+        unblind=args.unblind,
+    )
+    print("Wrote:", outdir / "reports" / "forecast_blinded.json")
+    if args.unblind:
+        print("Wrote:", outdir / "reports" / "forecast_unblinded.json")
 
 
 if __name__ == "__main__":

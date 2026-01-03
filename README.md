@@ -192,6 +192,16 @@ References:
 
 **Blinded Intervention Harness** — The `experiment-run` command generates a randomized A/B schedule with deterministic seeding and stores blinded schedules separately from optional unblinded labels. By default, the analysis block is blinded (group labels omitted) to support experimental hygiene without interpretive claims.
 
+**Forecast Harness** — The `forecast-run` command ingests external forecasts, scores them against deterministic window outcomes, and writes blinded reports by default. Forecast scoring compares predicted thresholds or directional claims to measured metrics.
+
+```bash
+# Blinded forecast scoring
+./py -m sat_qkd_lab.run forecast-run --forecasts forecasts.json --outdir .
+
+# Unblinded scoring with group labels
+./py -m sat_qkd_lab.run forecast-run --forecasts forecasts.json --outdir . --unblind
+```
+
 ### Simulator API
 
 The core simulation functions are:
