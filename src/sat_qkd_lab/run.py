@@ -54,6 +54,7 @@ from .plotting import (
     plot_secure_window_fragmentation,
     plot_basis_bias_vs_elevation,
     plot_calibration_quality_card,
+    plot_calibration_residuals,
     plot_polarization_drift_vs_time,
 )
 from .free_space_link import FreeSpaceLinkParams, generate_elevation_profile
@@ -66,6 +67,7 @@ from .calibration_fit import (
     fit_telemetry_parameters,
     predict_with_uncertainty,
     compute_fit_quality,
+    compute_residual_diagnostics,
 )
 from .pass_model import (
     PassModelParams,
@@ -2508,6 +2510,7 @@ def _run_calibration_fit(args: argparse.Namespace) -> None:
 
     predicted = predict_with_uncertainty(records, fit, args.eta_base)
     fit_quality = compute_fit_quality(records, fit, args.eta_base)
+    residual_diag = compute_residual_diagnostics(records, fit, args.eta_base)
 
     params_output = {
         "eta_base": args.eta_base,
@@ -2547,6 +2550,7 @@ def _run_calibration_fit(args: argparse.Namespace) -> None:
         },
         "fit": params_output,
         "fit_quality": fit_quality,
+        "residual_diagnostics": residual_diag,
         "predicted": predicted,
         "artifacts": {
             "calibration_params": "reports/calibration_params.json",
@@ -2569,6 +2573,20 @@ def _run_calibration_fit(args: argparse.Namespace) -> None:
     )
     print("Plot:", card_plot_path)
 
+    loss_db = np.array([r.loss_db for r in records], dtype=float)
+    residuals = np.array(residual_diag["residuals"], dtype=float)
+    predicted_vals = np.array(residual_diag["predicted"], dtype=float)
+    observed_vals = np.array(residual_diag["observed"], dtype=float)
+    residual_plot_path = plot_calibration_residuals(
+        loss_db=loss_db,
+        observed=observed_vals,
+        predicted=predicted_vals,
+        residuals=residuals,
+        autocorr_lag1=float(residual_diag["autocorr_lag1"]),
+        out_path=str(outdir / "figures" / "calibration_residuals.png"),
+    )
+    print("Plot:", residual_plot_path)
+
     card_report = {
         "schema_version": "1.0",
         "mode": "calibration-card",
@@ -2578,8 +2596,10 @@ def _run_calibration_fit(args: argparse.Namespace) -> None:
             "eta_base": args.eta_base,
         },
         "fit_quality": fit_quality,
+        "residual_diagnostics": residual_diag,
         "artifacts": {
             "calibration_quality_card": "figures/calibration_quality_card.png",
+            "calibration_residuals": "figures/calibration_residuals.png",
         },
     }
     card_path = outdir / "reports" / "latest_calibration_card.json"
@@ -2587,6 +2607,26 @@ def _run_calibration_fit(args: argparse.Namespace) -> None:
         json.dump(card_report, f, indent=2)
         f.write("\n")
     print("Wrote:", card_path)
+
+    diagnostics_report = {
+        "schema_version": "1.0",
+        "mode": "calibration-diagnostics",
+        "timestamp_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "inputs": {
+            "telemetry_path": args.telemetry,
+            "eta_base": args.eta_base,
+        },
+        "fit_quality": fit_quality,
+        "residual_diagnostics": residual_diag,
+        "artifacts": {
+            "calibration_residuals": "figures/calibration_residuals.png",
+        },
+    }
+    diagnostics_path = outdir / "reports" / "latest_calibration_diagnostics.json"
+    with open(diagnostics_path, "w") as f:
+        json.dump(diagnostics_report, f, indent=2)
+        f.write("\n")
+    print("Wrote:", diagnostics_path)
 
 
 def _run_constellation_sweep(args: argparse.Namespace) -> None:

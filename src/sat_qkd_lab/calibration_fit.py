@@ -150,6 +150,38 @@ def compute_fit_quality(
     }
 
 
+def compute_residual_diagnostics(
+    records: List[TelemetryRecord],
+    fit: FitResult,
+    eta_base: float,
+    autocorr_lag: int = 1,
+    warning_threshold: float = 0.4,
+) -> Dict[str, float | list[float] | bool]:
+    """
+    Compute residual diagnostics with an autocorrelation proxy.
+    """
+    observed = np.array([r.qber_mean for r in records], dtype=float)
+    predicted = np.array([
+        predict_qber(r.loss_db, fit.eta_scale, fit.p_bg, fit.flip_prob, eta_base)
+        for r in records
+    ], dtype=float)
+    residuals = observed - predicted
+    autocorr = 0.0
+    if residuals.size > autocorr_lag and np.std(residuals) > 0:
+        x = residuals[:-autocorr_lag]
+        y = residuals[autocorr_lag:]
+        autocorr = float(np.corrcoef(x, y)[0, 1])
+    structure = abs(autocorr)
+    return {
+        "residuals": [float(r) for r in residuals],
+        "predicted": [float(p) for p in predicted],
+        "observed": [float(o) for o in observed],
+        "autocorr_lag1": autocorr,
+        "structure_score": float(structure),
+        "overfit_warning": bool(structure > warning_threshold),
+    }
+
+
 def _estimate_clock_offset(records: List[TelemetryRecord]) -> Optional[float]:
     offsets = []
     for record in records:
