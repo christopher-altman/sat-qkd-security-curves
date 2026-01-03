@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0",
+  "mode": "blinded_schedule",
+  "timestamp_utc": "2026-01-03T05:31:05.079395Z",
+  "blocks": [
+    {
+      "block_index": 0,
+      "assignment_code": "blk-d82c07cd"
+    },
+    {
+      "block_index": 1,
+      "assignment_code": "blk-629f6fbe"
+    },
+    {
+      "block_index": 2,
+      "assignment_code": "blk-c2094cac"
+    },
+    {
+      "block_index": 3,
+      "assignment_code": "blk-e3e70682"
+    },
+    {
+      "block_index": 4,
+      "assignment_code": "blk-6baa9455"
+    },
+    {
+      "block_index": 5,
+      "assignment_code": "blk-0a5d2f34"
+    },
+    {
+      "block_index": 6,
+      "assignment_code": "blk-42485e3a"
+    },
+    {
+      "block_index": 7,
+      "assignment_code": "blk-f728b4fa"
+    },
+    {
+      "block_index": 8,
+      "assignment_code": "blk-82e2e662"
+    },
+    {
+      "block_index": 9,
+      "assignment_code": "blk-7c65c1e5"
+    },
+    {
+      "block_index": 10,
+      "assignment_code": "blk-67a9c378"
+    },
+    {
+      "block_index": 11,
+      "assignment_code": "blk-eb1167b3"
+    },
+    {
+      "block_index": 12,
+      "assignment_code": "blk-c8a70639"
+    },
+    {
+      "block_index": 13,
+      "assignment_code": "blk-d4713d60"
+    },
+    {
+      "block_index": 14,
+      "assignment_code": "blk-4da5e709"
+    },
+    {
+      "block_index": 15,
+      "assignment_code": "blk-f7c1bd87"
+    },
+    {
+      "block_index": 16,
+      "assignment_code": "blk-7a024204"
+    },
+    {
+      "block_index": 17,
+      "assignment_code": "blk-5ba91faf"
+    },
+    {
+      "block_index": 18,
+      "assignment_code": "blk-9558867f"
+    },
+    {
+      "block_index": 19,
+      "assignment_code": "blk-e443df78"
+    }
+  ]
+}

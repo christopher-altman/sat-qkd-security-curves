@@ -1,0 +1,281 @@
+{
+  "schema_version": "1.0",
+  "mode": "experiment-run",
+  "timestamp_utc": "2026-01-03T05:31:05.080128Z",
+  "inputs": {
+    "seed": 0,
+    "n_blocks": 20,
+    "block_seconds": 30.0,
+    "rep_rate_hz": 100000000.0,
+    "pass_seconds": 600.0,
+    "metrics": [
+      "qber_mean",
+      "headroom",
+      "total_secret_bits"
+    ],
+    "finite_key": {
+      "enabled": false,
+      "epsilon_sec": null,
+      "epsilon_cor": null
+    }
+  },
+  "units": {
+    "block_seconds": "s",
+    "rep_rate_hz": "Hz",
+    "pass_seconds": "s",
+    "qber": "unitless",
+    "headroom": "unitless",
+    "secret_bits": "bits"
+  },
+  "blinding": {
+    "blinded": true,
+    "schedule_path": "reports/schedule_blinded.json",
+    "unblind_required": true
+  },
+  "block_results": [
+    {
+      "block_index": 0,
+      "t_start_seconds": 0.0,
+      "t_end_seconds": 30.0,
+      "metrics": {
+        "qber_mean": 0.03198649940707039,
+        "headroom": 0.07801350059292961,
+        "total_secret_bits": 443612611.2525367
+      }
+    },
+    {
+      "block_index": 1,
+      "t_start_seconds": 30.0,
+      "t_end_seconds": 60.0,
+      "metrics": {
+        "qber_mean": 0.02870603673890499,
+        "headroom": 0.081293963261095,
+        "total_secret_bits": 468209098.91656226
+      }
+    },
+    {
+      "block_index": 2,
+      "t_start_seconds": 60.0,
+      "t_end_seconds": 90.0,
+      "metrics": {
+        "qber_mean": 0.02933266403240866,
+        "headroom": 0.08066733596759135,
+        "total_secret_bits": 463448877.60255927
+      }
+    },
+    {
+      "block_index": 3,
+      "t_start_seconds": 90.0,
+      "t_end_seconds": 120.0,
+      "metrics": {
+        "qber_mean": 0.033291343521165355,
+        "headroom": 0.07670865647883465,
+        "total_secret_bits": 434042587.31680673
+      }
+    },
+    {
+      "block_index": 4,
+      "t_start_seconds": 120.0,
+      "t_end_seconds": 150.0,
+      "metrics": {
+        "qber_mean": 0.02888222046830346,
+        "headroom": 0.08111777953169655,
+        "total_secret_bits": 466867653.75378954
+      }
+    },
+    {
+      "block_index": 5,
+      "t_start_seconds": 150.0,
+      "t_end_seconds": 180.0,
+      "metrics": {
+        "qber_mean": 0.028971686673894544,
+        "headroom": 0.08102831332610545,
+        "total_secret_bits": 466187384.83174837
+      }
+    },
+    {
+      "block_index": 6,
+      "t_start_seconds": 180.0,
+      "t_end_seconds": 210.0,
+      "metrics": {
+        "qber_mean": 0.03480823866459714,
+        "headroom": 0.07519176133540287,
+        "total_secret_bits": 423060986.67487746
+      }
+    },
+    {
+      "block_index": 7,
+      "t_start_seconds": 210.0,
+      "t_end_seconds": 240.0,
+      "metrics": {
+        "qber_mean": 0.02693783481425274,
+        "headroom": 0.08306216518574726,
+        "total_secret_bits": 481807902.8679376
+      }
+    },
+    {
+      "block_index": 8,
+      "t_start_seconds": 240.0,
+      "t_end_seconds": 270.0,
+      "metrics": {
+        "qber_mean": 0.0315929316805871,
+        "headroom": 0.07840706831941291,
+        "total_secret_bits": 446522275.72199845
+      }
+    },
+    {
+      "block_index": 9,
+      "t_start_seconds": 270.0,
+      "t_end_seconds": 300.0,
+      "metrics": {
+        "qber_mean": 0.02599270296569719,
+        "headroom": 0.08400729703430282,
+        "total_secret_bits": 489181542.99167657
+      }
+    },
+    {
+      "block_index": 10,
+      "t_start_seconds": 300.0,
+      "t_end_seconds": 330.0,
+      "metrics": {
+        "qber_mean": 0.028806074503828594,
+        "headroom": 0.08119392549617141,
+        "total_secret_bits": 467447126.7588608
+      }
+    },
+    {
+      "block_index": 11,
+      "t_start_seconds": 330.0,
+      "t_end_seconds": 360.0,
+      "metrics": {
+        "qber_mean": 0.033007361764963876,
+        "headroom": 0.07699263823503613,
+        "total_secret_bits": 436115474.4561494
+      }
+    },
+    {
+      "block_index": 12,
+      "t_start_seconds": 360.0,
+      "t_end_seconds": 390.0,
+      "metrics": {
+        "qber_mean": 0.032442872826153345,
+        "headroom": 0.07755712717384666,
+        "total_secret_bits": 440252168.1126677
+      }
+    },
+    {
+      "block_index": 13,
+      "t_start_seconds": 390.0,
+      "t_end_seconds": 420.0,
+      "metrics": {
+        "qber_mean": 0.02819775969920923,
+        "headroom": 0.08180224030079077,
+        "total_secret_bits": 472092620.98483473
+      }
+    },
+    {
+      "block_index": 14,
+      "t_start_seconds": 420.0,
+      "t_end_seconds": 450.0,
+      "metrics": {
+        "qber_mean": 0.029092602539750767,
+        "headroom": 0.08090739746024923,
+        "total_secret_bits": 465268962.0504775
+      }
+    },
+    {
+      "block_index": 15,
+      "t_start_seconds": 450.0,
+      "t_end_seconds": 480.0,
+      "metrics": {
+        "qber_mean": 0.030160466084821223,
+        "headroom": 0.07983953391517878,
+        "total_secret_bits": 457206074.8675381
+      }
+    },
+    {
+      "block_index": 16,
+      "t_start_seconds": 480.0,
+      "t_end_seconds": 510.0,
+      "metrics": {
+        "qber_mean": 0.027483793404551066,
+        "headroom": 0.08251620659544893,
+        "total_secret_bits": 477582265.8082659
+      }
+    },
+    {
+      "block_index": 17,
+      "t_start_seconds": 510.0,
+      "t_end_seconds": 540.0,
+      "metrics": {
+        "qber_mean": 0.031104440010121998,
+        "headroom": 0.078895559989878,
+        "total_secret_bits": 450148971.10144746
+      }
+    },
+    {
+      "block_index": 18,
+      "t_start_seconds": 540.0,
+      "t_end_seconds": 570.0,
+      "metrics": {
+        "qber_mean": 0.03445515458414043,
+        "headroom": 0.07554484541585957,
+        "total_secret_bits": 425603679.6948329
+      }
+    },
+    {
+      "block_index": 19,
+      "t_start_seconds": 570.0,
+      "t_end_seconds": 600.0,
+      "metrics": {
+        "qber_mean": 0.027289517012897464,
+        "headroom": 0.08271048298710254,
+        "total_secret_bits": 479083145.4763869
+      }
+    }
+  ],
+  "analysis": {
+    "group_labels_included": false,
+    "metrics": {
+      "qber_mean": {
+        "control_mean": null,
+        "intervention_mean": null,
+        "delta_intervention_minus_control": null,
+        "ci_low": null,
+        "ci_high": null,
+        "test": {
+          "name": "difference_in_means",
+          "statistic": null
+        }
+      },
+      "headroom": {
+        "control_mean": null,
+        "intervention_mean": null,
+        "delta_intervention_minus_control": null,
+        "ci_low": null,
+        "ci_high": null,
+        "test": {
+          "name": "difference_in_means",
+          "statistic": null
+        }
+      },
+      "total_secret_bits": {
+        "control_mean": null,
+        "intervention_mean": null,
+        "delta_intervention_minus_control": null,
+        "ci_low": null,
+        "ci_high": null,
+        "test": {
+          "name": "difference_in_means",
+          "statistic": null
+        }
+      }
+    }
+  },
+  "artifacts": {
+    "schedule_files": {
+      "blinded": "reports/schedule_blinded.json",
+      "unblinded_optional": "reports/schedule_unblinded.json"
+    }
+  }
+}
