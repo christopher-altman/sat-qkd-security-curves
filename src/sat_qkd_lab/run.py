@@ -71,6 +71,7 @@ from .timetags import (
 from .coincidence import match_coincidences
 from .eb_observables import compute_observables
 from .timing import TimingModel
+from .event_stream import StreamParams, generate_event_stream
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -381,6 +382,12 @@ def build_parser() -> argparse.ArgumentParser:
                     help="TDC resolution in picoseconds (0 = no quantization)")
     cs.add_argument("--estimate-offset", action="store_true",
                     help="Estimate clock offset via coincidence scan")
+    cs.add_argument("--stream-mode", action="store_true",
+                    help="Use event-stream instrument pipeline")
+    cs.add_argument("--gate-duty-cycle", type=float, default=1.0,
+                    help="Gating duty cycle (0..1) for stream mode")
+    cs.add_argument("--dead-time-ns", type=float, default=0.0,
+                    help="Detector dead time in nanoseconds (stream mode)")
     cs.add_argument("--seed", type=int, default=0)
     cs.add_argument("--outdir", type=str, default=".",
                     help="Output directory for figures/reports (default: .)")
@@ -586,6 +593,8 @@ def _validate_args(args: argparse.Namespace) -> None:
         validate_seed(args.seed)
         validate_float("min-visibility", args.min_visibility, min_value=0.0, max_value=1.0)
         validate_float("min-chsh-s", args.min_chsh_s, min_value=0.0)
+        validate_float("gate-duty-cycle", args.gate_duty_cycle, min_value=0.0, max_value=1.0)
+        validate_float("dead-time-ns", args.dead_time_ns, min_value=0.0)
     elif args.cmd == "calibration-fit":
         if not Path(args.telemetry).exists():
             raise FileNotFoundError(f"Telemetry file not found: {args.telemetry}")
@@ -1649,6 +1658,7 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
     sigma_s = args.jitter_ps * 1e-12
     tau_s = args.tau_ps * 1e-12
     dead_time_s = args.dead_time_ps * 1e-12
+    dead_time_stream_s = args.dead_time_ns * 1e-9
     afterpulse_window_s = args.afterpulse_window_ps * 1e-12
     afterpulse_decay_s = args.afterpulse_decay_ps * 1e-12
     tdc_seconds = args.tdc_ps * 1e-12
@@ -1661,47 +1671,65 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
         expected_pairs = args.pair_rate_hz * args.duration * (eta ** 2)
         n_pairs = int(rng.poisson(expected_pairs))
 
-        sig_a, sig_b = generate_pair_time_tags(
-            n_pairs=n_pairs,
-            duration_s=args.duration,
-            sigma_a=sigma_s,
-            sigma_b=sigma_s,
-            seed=args.seed + idx,
-        )
-        bg_a = generate_background_time_tags(
-            rate_hz=args.background_rate_hz,
-            duration_s=args.duration,
-            sigma=sigma_s,
-            seed=args.seed + 1000 + idx * 2,
-        )
-        bg_b = generate_background_time_tags(
-            rate_hz=args.background_rate_hz,
-            duration_s=args.duration,
-            sigma=sigma_s,
-            seed=args.seed + 1000 + idx * 2 + 1,
-        )
-        tags_a = merge_time_tags(sig_a, bg_a)
-        tags_b = merge_time_tags(sig_b, bg_b)
-
-        if args.afterpulse_prob > 0.0 and afterpulse_window_s > 0.0:
-            tags_a = add_afterpulsing(
-                tags_a,
-                p_afterpulse=args.afterpulse_prob,
-                window_s=afterpulse_window_s,
-                decay=afterpulse_decay_s,
-                seed=args.seed + 2000 + idx * 2,
+        if args.stream_mode:
+            stream_params = StreamParams(
+                duration_s=args.duration,
+                pair_rate_hz=args.pair_rate_hz * (eta ** 2),
+                background_rate_hz=args.background_rate_hz,
+                gate_duty_cycle=args.gate_duty_cycle,
+                dead_time_s=dead_time_stream_s,
+                afterpulse_prob=args.afterpulse_prob,
+                afterpulse_window_s=afterpulse_window_s,
+                afterpulse_decay_s=afterpulse_decay_s,
+                eta_z=1.0,
+                eta_x=1.0,
+                misalignment_prob=0.0,
+                jitter_sigma_s=sigma_s,
+                seed=args.seed + idx,
             )
-            tags_b = add_afterpulsing(
-                tags_b,
-                p_afterpulse=args.afterpulse_prob,
-                window_s=afterpulse_window_s,
-                decay=afterpulse_decay_s,
-                seed=args.seed + 2000 + idx * 2 + 1,
+            tags_a, tags_b = generate_event_stream(stream_params)
+        else:
+            sig_a, sig_b = generate_pair_time_tags(
+                n_pairs=n_pairs,
+                duration_s=args.duration,
+                sigma_a=sigma_s,
+                sigma_b=sigma_s,
+                seed=args.seed + idx,
             )
+            bg_a = generate_background_time_tags(
+                rate_hz=args.background_rate_hz,
+                duration_s=args.duration,
+                sigma=sigma_s,
+                seed=args.seed + 1000 + idx * 2,
+            )
+            bg_b = generate_background_time_tags(
+                rate_hz=args.background_rate_hz,
+                duration_s=args.duration,
+                sigma=sigma_s,
+                seed=args.seed + 1000 + idx * 2 + 1,
+            )
+            tags_a = merge_time_tags(sig_a, bg_a)
+            tags_b = merge_time_tags(sig_b, bg_b)
 
-        if dead_time_s > 0.0:
-            tags_a = apply_dead_time(tags_a, dead_time_s)
-            tags_b = apply_dead_time(tags_b, dead_time_s)
+            if args.afterpulse_prob > 0.0 and afterpulse_window_s > 0.0:
+                tags_a = add_afterpulsing(
+                    tags_a,
+                    p_afterpulse=args.afterpulse_prob,
+                    window_s=afterpulse_window_s,
+                    decay=afterpulse_decay_s,
+                    seed=args.seed + 2000 + idx * 2,
+                )
+                tags_b = add_afterpulsing(
+                    tags_b,
+                    p_afterpulse=args.afterpulse_prob,
+                    window_s=afterpulse_window_s,
+                    decay=afterpulse_decay_s,
+                    seed=args.seed + 2000 + idx * 2 + 1,
+                )
+
+            if dead_time_s > 0.0:
+                tags_a = apply_dead_time(tags_a, dead_time_s)
+                tags_b = apply_dead_time(tags_b, dead_time_s)
 
         timing_model = TimingModel(
             delta_t=args.clock_offset_s,
@@ -1786,6 +1814,9 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
             "clock_drift_ppm": args.clock_drift_ppm,
             "tdc_ps": args.tdc_ps,
             "estimate_offset": bool(args.estimate_offset),
+            "stream_mode": bool(args.stream_mode),
+            "gate_duty_cycle": args.gate_duty_cycle,
+            "dead_time_ns": args.dead_time_ns,
             "seed": args.seed,
         },
         "records": records,
@@ -1795,6 +1826,14 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
             "drift_ppm": args.clock_drift_ppm,
             "tdc_seconds": tdc_seconds,
             "estimated_clock_offset_s": records[-1]["estimated_clock_offset_s"] if args.estimate_offset else None,
+        },
+        "stream_model": {
+            "enabled": bool(args.stream_mode),
+            "gate_duty_cycle": args.gate_duty_cycle,
+            "dead_time_ns": args.dead_time_ns,
+            "afterpulse_prob": args.afterpulse_prob,
+            "afterpulse_window_ps": args.afterpulse_window_ps,
+            "afterpulse_decay_ps": args.afterpulse_decay_ps,
         },
         "artifacts": {
             "car_plot": "figures/car_vs_loss.png",

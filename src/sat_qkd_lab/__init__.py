@@ -24,6 +24,7 @@ __all__ = [
     "calibration_fit",
     "dashboard",
     "timing",
+    "event_stream",
 ]
 
 from . import free_space_link  # makes sat_qkd_lab.free_space_link available
