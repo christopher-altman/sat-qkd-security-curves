@@ -269,6 +269,41 @@ def plot_clock_sync_diagnostics(
     return out_path
 
 
+def plot_fading_evolution(
+    t_seconds: Sequence[float],
+    transmittance: Sequence[float],
+    out_path: str,
+) -> str:
+    """Plot OU fading transmittance evolution over time."""
+    fig, ax = plt.subplots()
+    ax.plot(t_seconds, transmittance, color="tab:green")
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Transmittance")
+    ax.set_title("OU fading evolution")
+    ax.set_ylim(bottom=0.0)
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    return out_path
+
+
+def plot_secure_window_fragmentation(
+    t_seconds: Sequence[float],
+    secure_mask: Sequence[bool],
+    out_path: str,
+) -> str:
+    """Plot secure window availability over time."""
+    fig, ax = plt.subplots()
+    values = [1 if s else 0 for s in secure_mask]
+    ax.step(t_seconds, values, where="post", color="tab:purple")
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Secure window (1/0)")
+    ax.set_title("Secure window fragmentation")
+    ax.set_ylim(-0.1, 1.1)
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    return out_path
+
+
 # --- Decoy-State Plotting ---
 
 def plot_decoy_key_rate_vs_loss(

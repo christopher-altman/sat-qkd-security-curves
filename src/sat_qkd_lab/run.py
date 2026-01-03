@@ -47,6 +47,8 @@ from .plotting import (
     plot_transmittance_with_pointing,
     plot_background_rate_vs_bandwidth,
     plot_clock_sync_diagnostics,
+    plot_fading_evolution,
+    plot_secure_window_fragmentation,
 )
 from .free_space_link import FreeSpaceLinkParams, generate_elevation_profile
 from .detector import DetectorParams, DEFAULT_DETECTOR
@@ -86,6 +88,7 @@ from .constellation import schedule_passes, simulate_inventory
 from .fading_samples import sample_fading_transmittance, plot_eta_samples
 from .hil_adapters import ingest_timetag_file, playback_pass, compute_validation_diffs
 from .clock_sync import generate_beacon_times, apply_clock_model, estimate_offset_drift
+from .ou_fading import simulate_ou_transmittance, compute_outage_clusters
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -424,6 +427,24 @@ def build_parser() -> argparse.ArgumentParser:
     clk.add_argument("--outdir", type=str, default=".",
                      help="Output directory for reports/figures (default: .)")
 
+    # --- fading-ou command ---
+    fou = sub.add_parser("fading-ou", help="Simulate OU fading evolution during a pass.")
+    fou.add_argument("--duration-s", type=float, default=300.0)
+    fou.add_argument("--dt-s", type=float, default=1.0)
+    fou.add_argument("--mu", type=float, default=0.8,
+                     help="Mean transmittance")
+    fou.add_argument("--theta", type=float, default=0.2,
+                     help="Mean reversion rate")
+    fou.add_argument("--sigma", type=float, default=0.05,
+                     help="OU diffusion amplitude")
+    fou.add_argument("--t0", type=float, default=0.8,
+                     help="Initial transmittance")
+    fou.add_argument("--outage-threshold", type=float, default=0.3,
+                     help="Threshold for secure window availability")
+    fou.add_argument("--seed", type=int, default=0)
+    fou.add_argument("--outdir", type=str, default=".",
+                     help="Output directory for reports/figures (default: .)")
+
     # --- coincidence-sim command ---
     cs = sub.add_parser("coincidence-sim", help="Simulate time-tagged coincidences and CAR vs loss.")
     cs.add_argument("--loss-min", type=float, default=20.0)
@@ -503,6 +524,8 @@ def main() -> None:
         _run_constellation_sweep(args)
     elif args.cmd == "clock-sync":
         _run_clock_sync(args)
+    elif args.cmd == "fading-ou":
+        _run_fading_ou(args)
 
 
 def _validate_args(args: argparse.Namespace) -> None:
@@ -727,6 +750,15 @@ def _validate_args(args: argparse.Namespace) -> None:
         validate_float("jitter-ps", args.jitter_ps, min_value=0.0)
         validate_float("pair-rate-hz", args.pair_rate_hz, min_value=0.0)
         validate_float("tau-ps", args.tau_ps, min_value=1e-9)
+        validate_seed(args.seed)
+    elif args.cmd == "fading-ou":
+        validate_float("duration-s", args.duration_s, min_value=1e-6)
+        validate_float("dt-s", args.dt_s, min_value=1e-9)
+        validate_float("mu", args.mu, min_value=0.0, max_value=1.0)
+        validate_float("theta", args.theta, min_value=0.0)
+        validate_float("sigma", args.sigma, min_value=0.0)
+        validate_float("t0", args.t0, min_value=0.0, max_value=1.0)
+        validate_float("outage-threshold", args.outage_threshold, min_value=0.0, max_value=1.0)
         validate_seed(args.seed)
 
 
@@ -2422,6 +2454,79 @@ def _run_clock_sync(args: argparse.Namespace) -> None:
     }
 
     report_path = outdir / "reports" / "latest_clock_sync.json"
+    with open(report_path, "w") as f:
+        json.dump(report, f, indent=2)
+        f.write("\n")
+    print("Wrote:", report_path)
+
+
+def _run_fading_ou(args: argparse.Namespace) -> None:
+    """Execute OU fading evolution simulation."""
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    (outdir / "reports").mkdir(exist_ok=True)
+    (outdir / "figures").mkdir(exist_ok=True)
+
+    times, values = simulate_ou_transmittance(
+        duration_s=args.duration_s,
+        dt_s=args.dt_s,
+        mu=args.mu,
+        theta=args.theta,
+        sigma=args.sigma,
+        seed=args.seed,
+        t0=args.t0,
+    )
+    outage_stats = compute_outage_clusters(times, values, threshold=args.outage_threshold)
+    secure_mask = [float(v) >= args.outage_threshold for v in values]
+
+    evo_plot_path = plot_fading_evolution(
+        times,
+        values,
+        str(outdir / "figures" / "pass_fading_evolution.png"),
+    )
+    frag_plot_path = plot_secure_window_fragmentation(
+        times,
+        secure_mask,
+        str(outdir / "figures" / "secure_window_fragmentation.png"),
+    )
+    print("Plot:", evo_plot_path)
+    print("Plot:", frag_plot_path)
+
+    report = {
+        "schema_version": "1.0",
+        "mode": "fading-ou",
+        "timestamp_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "inputs": {
+            "duration_s": float(args.duration_s),
+            "dt_s": float(args.dt_s),
+            "mu": float(args.mu),
+            "theta": float(args.theta),
+            "sigma": float(args.sigma),
+            "t0": float(args.t0),
+            "outage_threshold": float(args.outage_threshold),
+            "seed": int(args.seed),
+        },
+        "summary": {
+            "mean_transmittance": float(np.mean(values)) if values.size else 0.0,
+            "variance_transmittance": float(np.var(values, ddof=1)) if values.size > 1 else 0.0,
+            "outage_count": int(outage_stats.count),
+            "outage_mean_duration_s": float(outage_stats.mean_duration_s),
+        },
+        "time_series": {
+            "t_seconds": [float(t) for t in times],
+            "transmittance": [float(v) for v in values],
+            "secure_mask": [int(s) for s in secure_mask],
+        },
+        "outages": {
+            "durations_s": [float(d) for d in outage_stats.durations_s],
+        },
+        "artifacts": {
+            "pass_fading_evolution": "figures/pass_fading_evolution.png",
+            "secure_window_fragmentation": "figures/secure_window_fragmentation.png",
+        },
+    }
+
+    report_path = outdir / "reports" / "latest_fading_ou.json"
     with open(report_path, "w") as f:
         json.dump(report, f, indent=2)
         f.write("\n")
