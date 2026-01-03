@@ -179,12 +179,18 @@ References:
 Outputs:
 - `figures/key_rate_vs_elevation.png` — Key rate vs elevation angle over pass
 - `figures/secure_window_per_pass.png` — Secure communication window timing
+- `figures/secure_window.png` — Finite-key secure window timing (pass-sweep schema)
 - `figures/loss_vs_elevation.png` — Total link loss vs elevation
 - `reports/latest.json` — Pass sweep results with secure window summary
+- `reports/latest_pass.json` — Pass sweep summary with finite-key bounds (schema v1.0)
 
 References:
 - Liao et al., "Satellite-to-ground quantum key distribution" (Nature 2017)
 - Bourgoin et al., "Free-space QKD to a moving receiver" (NJP 2013)
+
+**Entanglement-Based QKD (EB-QKD)** — The `sat_qkd_lab.eb_qkd` module adds a passive-basis EB-QKD expected-value harness with finite-key bounds using Hoeffding concentration. It reports `qber_upper`, `secret_fraction_finite`, and abort logic for conservative privacy amplification estimates.
+
+**Blinded Intervention Harness** — The `experiment-run` command generates a randomized A/B schedule with deterministic seeding and stores blinded schedules separately from optional unblinded labels. By default, the analysis block is blinded (group labels omitted) to support experimental hygiene without interpretive claims.
 
 ### Simulator API
 
