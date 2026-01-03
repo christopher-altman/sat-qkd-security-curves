@@ -41,6 +41,8 @@ from .plotting import (
     plot_visibility_vs_loss,
     plot_eta_fading_samples,
     plot_secure_window_impact,
+    plot_pointing_lock_state,
+    plot_transmittance_with_pointing,
 )
 from .free_space_link import FreeSpaceLinkParams, generate_elevation_profile
 from .detector import DetectorParams, DEFAULT_DETECTOR
@@ -59,6 +61,7 @@ from .pass_model import (
     records_to_time_series,
     sample_fading_factors,
 )
+from .pointing import PointingParams
 from .experiment import ExperimentParams, run_experiment
 from .forecast_harness import run_forecast_harness
 from .timetags import (
@@ -301,6 +304,19 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Number of fading samples per time step")
     ps.add_argument("--fading-seed", type=int, default=0,
                     help="Seed for fading sampling (default: 0)")
+    # Pointing acquisition/track/dropout dynamics
+    ps.add_argument("--pointing", action="store_true",
+                    help="Enable pointing acquisition/track/dropout model")
+    ps.add_argument("--acq-seconds", type=float, default=0.0,
+                    help="Acquisition time before lock (seconds)")
+    ps.add_argument("--dropout-prob", type=float, default=0.0,
+                    help="Dropout probability per second while locked")
+    ps.add_argument("--relock-seconds", type=float, default=0.0,
+                    help="Recovery time after dropout (seconds)")
+    ps.add_argument("--pointing-jitter-urad", type=float, default=2.0,
+                    help="Pointing jitter sigma in microradians")
+    ps.add_argument("--pointing-seed", type=int, default=0,
+                    help="Seed for pointing model")
 
     # --- experiment-run command ---
     ex = sub.add_parser("experiment-run", help="Run blinded intervention A/B experiment harness.")
@@ -538,6 +554,12 @@ def _validate_args(args: argparse.Namespace) -> None:
             validate_float("fading-sigma-ln", args.fading_sigma_ln, min_value=0.0)
             validate_int("fading-samples", args.fading_samples, min_value=1)
             validate_seed(args.fading_seed)
+        if args.pointing:
+            validate_float("acq-seconds", args.acq_seconds, min_value=0.0)
+            validate_float("dropout-prob", args.dropout_prob, min_value=0.0, max_value=1.0)
+            validate_float("relock-seconds", args.relock_seconds, min_value=0.0)
+            validate_float("pointing-jitter-urad", args.pointing_jitter_urad, min_value=0.0)
+            validate_seed(args.pointing_seed)
         time_s, _ = generate_elevation_profile(
             max_elevation_deg=args.max_elevation,
             min_elevation_deg=args.min_elevation,
@@ -1389,6 +1411,16 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
             seed=args.fading_seed,
         )
 
+    pointing_params = None
+    if args.pointing:
+        pointing_params = PointingParams(
+            acq_seconds=args.acq_seconds,
+            dropout_prob=args.dropout_prob,
+            relock_seconds=args.relock_seconds,
+            pointing_jitter_urad=args.pointing_jitter_urad,
+            seed=args.pointing_seed,
+        )
+
     pass_params = PassModelParams(
         max_elevation_deg=args.max_elevation,
         min_elevation_deg=args.min_elevation,
@@ -1407,6 +1439,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         finite_key=finite_key_params,
         calibration=calibration,
         fading=fading_params,
+        pointing=pointing_params,
     )
 
     summary_base = None
@@ -1468,6 +1501,18 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
     )
     print("Plot:", loss_plot_path)
 
+    if args.pointing:
+        lock_plot_path = plot_pointing_lock_state(
+            records_pass,
+            str(outdir / "figures" / "pointing_lock_state.png"),
+        )
+        print("Plot:", lock_plot_path)
+        trans_plot_path = plot_transmittance_with_pointing(
+            records_pass,
+            str(outdir / "figures" / "transmittance_with_pointing.png"),
+        )
+        print("Plot:", trans_plot_path)
+
     # Build report
     report = {
         "schema_version": SCHEMA_VERSION,
@@ -1527,6 +1572,8 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         assumptions.append("finite_key enabled implies Hoeffding bounds for QBER")
     if args.fading:
         assumptions.append("fading_model lognormal applied to transmittance samples")
+    if args.pointing:
+        assumptions.append("pointing_model applies acquisition/track/dropout transmittance multiplier")
 
     plots = {
         "key_rate_vs_elevation": "figures/key_rate_vs_elevation.png",
@@ -1535,6 +1582,9 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
     if args.fading:
         plots["eta_fading_samples"] = "figures/eta_fading_samples.png"
         plots["secure_window_fading_impact"] = "figures/secure_window_fading_impact.png"
+    if args.pointing:
+        plots["pointing_lock_state"] = "figures/pointing_lock_state.png"
+        plots["transmittance_with_pointing"] = "figures/transmittance_with_pointing.png"
 
     pass_report = {
         "schema_version": "1.0",
@@ -1571,6 +1621,14 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
                     "samples": int(args.fading_samples),
                     "seed": int(args.fading_seed),
                 },
+            },
+            "pointing_model": {
+                "enabled": bool(args.pointing),
+                "acq_seconds": float(args.acq_seconds),
+                "dropout_prob": float(args.dropout_prob),
+                "relock_seconds": float(args.relock_seconds),
+                "pointing_jitter_urad": float(args.pointing_jitter_urad),
+                "seed": int(args.pointing_seed),
             },
         },
         "units": {
