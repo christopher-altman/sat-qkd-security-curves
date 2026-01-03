@@ -321,6 +321,22 @@ def plot_basis_bias_vs_elevation(
     return out_path
 
 
+def plot_pol_rotation_vs_elevation(
+    elevation_deg: Sequence[float],
+    rotation_deg: Sequence[float],
+    out_path: str,
+) -> str:
+    """Plot polarization rotation versus elevation."""
+    fig, ax = plt.subplots()
+    ax.plot(elevation_deg, rotation_deg, color="tab:blue")
+    ax.set_xlabel("Elevation (deg)")
+    ax.set_ylabel("Rotation (deg)")
+    ax.set_title("Polarization rotation vs elevation")
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    return out_path
+
+
 def plot_calibration_quality_card(
     r2: float,
     rmse: float,
