@@ -42,6 +42,8 @@ from .detector import DetectorParams, DEFAULT_DETECTOR
 from .decoy_bb84 import DecoyParams, sweep_decoy_loss
 from .attacks import Attack, AttackConfig
 from .calibration import CalibrationModel
+from .pass_model import PassModelParams, compute_pass_records, records_to_time_series
+from .experiment import ExperimentParams, run_experiment
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -245,6 +247,43 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Day-time operation (overrides --is-night)")
     ps.add_argument("--day-bg-factor", type=float, default=100.0,
                     help="Day/night background ratio (default: 100)")
+    # Finite-key analysis for pass-sweep
+    ps.add_argument("--finite-key", action="store_true",
+                    help="Enable finite-key analysis for pass sweep")
+    ps.add_argument("--eps-pe", type=float, default=1e-10,
+                    help="Parameter estimation failure probability")
+    ps.add_argument("--eps-sec", type=float, default=1e-10,
+                    help="Secrecy failure probability")
+    ps.add_argument("--eps-cor", type=float, default=1e-15,
+                    help="Correctness failure probability")
+    ps.add_argument("--ec-efficiency", type=float, default=1.16,
+                    help="Error correction efficiency (>= 1.0)")
+    ps.add_argument("--pe-frac", type=float, default=0.2,
+                    help="Fraction of sifted bits used for parameter estimation")
+    ps.add_argument("--m-pe", type=int, default=None,
+                    help="Explicit parameter estimation sample size (overrides --pe-frac)")
+    ps.add_argument("--calibration-file", type=str, default=None,
+                    help="Optional JSON file with calibration specs (off by default)")
+
+    # --- experiment-run command ---
+    ex = sub.add_parser("experiment-run", help="Run blinded intervention A/B experiment harness.")
+    ex.add_argument("--seed", type=int, default=0)
+    ex.add_argument("--n-blocks", type=int, default=20)
+    ex.add_argument("--block-seconds", type=float, default=30.0)
+    ex.add_argument("--rep-rate-hz", type=float, default=1e8)
+    ex.add_argument("--pass-seconds", type=float, default=600.0)
+    ex.add_argument("--metrics", type=str, nargs="+",
+                    default=["qber_mean", "headroom", "total_secret_bits"])
+    ex.add_argument("--finite-key", action="store_true",
+                    help="Enable finite-key analysis in experiment metrics")
+    ex.add_argument("--eps-sec", type=float, default=1e-10,
+                    help="Secrecy failure probability")
+    ex.add_argument("--eps-cor", type=float, default=1e-15,
+                    help="Correctness failure probability")
+    ex.add_argument("--unblind", action="store_true",
+                    help="Write unblinded schedule and include group analysis")
+    ex.add_argument("--outdir", type=str, default=".",
+                    help="Output directory for reports (default: .)")
 
     return p
 
@@ -264,6 +303,8 @@ def main() -> None:
         _run_attack_sweep(args)
     elif args.cmd == "pass-sweep":
         _run_pass_sweep(args)
+    elif args.cmd == "experiment-run":
+        _run_experiment(args)
 
 
 def _validate_args(args: argparse.Namespace) -> None:
@@ -368,6 +409,14 @@ def _validate_args(args: argparse.Namespace) -> None:
             validate_int("n-sent", args.n_sent, min_value=1)
         if args.rep_rate is not None:
             validate_float("rep-rate", args.rep_rate, min_value=1e-9)
+        if args.finite_key:
+            validate_float("eps-pe", args.eps_pe, min_value=0.0, max_value=1.0)
+            validate_float("eps-sec", args.eps_sec, min_value=0.0, max_value=1.0)
+            validate_float("eps-cor", args.eps_cor, min_value=0.0, max_value=1.0)
+            validate_float("ec-efficiency", args.ec_efficiency, min_value=1.0)
+            validate_float("pe-frac", args.pe_frac, min_value=1e-9, max_value=1.0)
+            if args.m_pe is not None:
+                validate_int("m-pe", args.m_pe, min_value=1)
         time_s, _ = generate_elevation_profile(
             max_elevation_deg=args.max_elevation,
             min_elevation_deg=args.min_elevation,
@@ -386,6 +435,15 @@ def _validate_args(args: argparse.Namespace) -> None:
                 "Total pulses must be >= number of time steps; "
                 "increase total pulses or decrease --time-step."
             )
+    elif args.cmd == "experiment-run":
+        validate_seed(args.seed)
+        validate_int("n-blocks", args.n_blocks, min_value=1)
+        validate_float("block-seconds", args.block_seconds, min_value=1e-9)
+        validate_float("rep-rate-hz", args.rep_rate_hz, min_value=1e-9)
+        validate_float("pass-seconds", args.pass_seconds, min_value=1e-9)
+        if args.finite_key:
+            validate_float("eps-sec", args.eps_sec, min_value=0.0, max_value=1.0)
+            validate_float("eps-cor", args.eps_cor, min_value=0.0, max_value=1.0)
 
 
 def _resolve_n_sent_for_sweep(args: argparse.Namespace) -> int:
@@ -1091,6 +1149,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
     """Execute satellite pass sweep command with free-space link model."""
     # Handle day/night toggle
     is_night = args.is_night and not args.day
+    background_mode = "night" if is_night else "day"
 
     # Build link parameters
     link_params = FreeSpaceLinkParams(
@@ -1107,6 +1166,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
     )
 
     detector = DetectorParams(eta=args.eta, p_bg=args.p_bg)
+    calibration = _load_calibration_model(args)
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -1122,13 +1182,14 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
     )
 
     pulses_schedule, total_sent = _resolve_pass_pulse_accounting(args, len(time_s))
+    rep_rate_hz = args.rep_rate if args.rep_rate is not None else total_sent / args.pass_duration
 
     print(f"Simulating pass sweep: {len(time_s)} time points, "
           f"elevation {args.min_elevation:.1f}° to {args.max_elevation:.1f}°")
     print(f"Mode: {'night' if is_night else 'day'}, turbulence: {args.turbulence}")
 
-    # Run the sweep
-    records, summary = sweep_pass(
+    # Run legacy Monte Carlo sweep for backwards-compatible report
+    records_mc, summary_mc = sweep_pass(
         elevation_deg_values=elevation_deg,
         time_s_values=time_s,
         flip_prob=args.flip_prob,
@@ -1140,26 +1201,61 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         turbulence=args.turbulence,
     )
 
-    # Extract key rates for plotting
-    key_rates = [r["secret_fraction"] for r in records]
+    finite_key_params = None
+    if args.finite_key:
+        finite_key_params = FiniteKeyParams(
+            eps_pe=args.eps_pe,
+            eps_sec=args.eps_sec,
+            eps_cor=args.eps_cor,
+            ec_efficiency=args.ec_efficiency,
+            pe_frac=args.pe_frac,
+            m_pe=args.m_pe,
+        )
+
+    pass_params = PassModelParams(
+        max_elevation_deg=args.max_elevation,
+        min_elevation_deg=args.min_elevation,
+        pass_seconds=args.pass_duration,
+        dt_seconds=args.time_step,
+        flip_prob=args.flip_prob,
+        rep_rate_hz=rep_rate_hz,
+        qber_abort_threshold=0.11,
+        background_mode=background_mode,
+    )
+
+    records_pass, summary_pass = compute_pass_records(
+        params=pass_params,
+        link_params=link_params,
+        detector=detector,
+        finite_key=finite_key_params,
+        calibration=calibration,
+    )
 
     # Generate plots
     elev_plot_path = plot_key_rate_vs_elevation(
-        records,
+        records_pass,
         str(outdir / "figures" / "key_rate_vs_elevation.png"),
     )
     print("Plot:", elev_plot_path)
 
     secure_plot_path = plot_secure_window(
-        records,
+        records_pass,
         str(outdir / "figures" / "secure_window_per_pass.png"),
-        secure_start_s=summary.get("secure_window_start_s"),
-        secure_end_s=summary.get("secure_window_end_s"),
+        secure_start_s=summary_pass["secure_window"]["t_start_seconds"],
+        secure_end_s=summary_pass["secure_window"]["t_end_seconds"],
     )
     print("Plot:", secure_plot_path)
 
+    secure_plot_alt_path = plot_secure_window(
+        records_pass,
+        str(outdir / "figures" / "secure_window.png"),
+        secure_start_s=summary_pass["secure_window"]["t_start_seconds"],
+        secure_end_s=summary_pass["secure_window"]["t_end_seconds"],
+    )
+    print("Plot:", secure_plot_alt_path)
+
     loss_plot_path = plot_loss_vs_elevation(
-        records,
+        records_pass,
         str(outdir / "figures" / "loss_vs_elevation.png"),
     )
     print("Plot:", loss_plot_path)
@@ -1169,8 +1265,8 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         "schema_version": SCHEMA_VERSION,
         "generated_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "pass_sweep": {
-            "records": records,
-            "summary": summary,
+            "records": records_mc,
+            "summary": summary_mc,
         },
         "parameters": {
             "max_elevation_deg": args.max_elevation,
@@ -1210,6 +1306,101 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         json.dump(report, f, indent=2)
         f.write("\n")
     print("Wrote:", report_path)
+
+    pass_time_series = records_to_time_series(records_pass, include_ci=finite_key_params is not None)
+    assumptions = [
+        "loss_db derived from elevation profile using elevation_to_loss model",
+        f"background_model daynight mode set to {background_mode}",
+    ]
+    if args.finite_key:
+        assumptions.append("finite_key enabled implies Hoeffding bounds for QBER")
+
+    pass_report = {
+        "schema_version": "1.0",
+        "mode": "pass-sweep",
+        "timestamp_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "inputs": {
+            "rep_rate_hz": float(rep_rate_hz),
+            "pass_seconds": float(args.pass_duration),
+            "dt_seconds": float(args.time_step),
+            "loss_model": {
+                "type": "elevation_to_loss",
+                "params": {
+                    "min_elevation_deg": float(args.min_elevation),
+                    "max_elevation_deg": float(args.max_elevation),
+                },
+            },
+            "background_model": {
+                "type": "daynight",
+                "params": {
+                    "mode": background_mode,
+                },
+            },
+            "finite_key": {
+                "enabled": bool(args.finite_key),
+                "epsilon_sec": float(args.eps_sec),
+                "epsilon_cor": float(args.eps_cor),
+                "pe_fraction": float(args.pe_frac),
+            },
+        },
+        "units": {
+            "rep_rate_hz": "Hz",
+            "pass_seconds": "s",
+            "dt_seconds": "s",
+            "elevation_deg": "deg",
+            "loss_db": "dB",
+            "key_rate_per_pulse": "bits/pulse",
+            "key_rate_bps": "bits/s",
+            "secret_bits": "bits",
+            "qber": "unitless",
+        },
+        "time_series": pass_time_series,
+        "summary": summary_pass,
+        "artifacts": {
+            "plots": {
+                "key_rate_vs_elevation": "figures/key_rate_vs_elevation.png",
+                "secure_window": "figures/secure_window.png",
+            }
+        },
+        "assumptions": assumptions,
+    }
+
+    pass_report_path = outdir / "reports" / "latest_pass.json"
+    with open(pass_report_path, "w") as f:
+        json.dump(pass_report, f, indent=2)
+        f.write("\n")
+    print("Wrote:", pass_report_path)
+
+
+def _run_experiment(args: argparse.Namespace) -> None:
+    """Execute blinded A/B experiment harness."""
+    outdir = Path(args.outdir)
+    params = ExperimentParams(
+        seed=args.seed,
+        n_blocks=args.n_blocks,
+        block_seconds=args.block_seconds,
+        rep_rate_hz=args.rep_rate_hz,
+        pass_seconds=args.pass_seconds,
+    )
+
+    finite_key_params = None
+    if args.finite_key:
+        finite_key_params = FiniteKeyParams(
+            eps_sec=args.eps_sec,
+            eps_cor=args.eps_cor,
+        )
+
+    output = run_experiment(
+        params=params,
+        metrics=args.metrics,
+        outdir=outdir,
+        finite_key=finite_key_params,
+        unblind=args.unblind,
+    )
+    print("Wrote:", outdir / "reports" / "latest_experiment.json")
+    if args.unblind:
+        print("Wrote:", outdir / "reports" / "schedule_unblinded.json")
+    print("Wrote:", outdir / "reports" / "schedule_blinded.json")
 
 
 if __name__ == "__main__":

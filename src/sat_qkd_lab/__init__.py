@@ -10,6 +10,9 @@ __all__ = [
     "helpers",
     "finite_key",
     "free_space_link",
+    "eb_qkd",
+    "pass_model",
+    "experiment",
 ]
 
 from . import free_space_link  # makes sat_qkd_lab.free_space_link available
