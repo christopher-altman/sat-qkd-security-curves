@@ -232,18 +232,6 @@ def finite_key_secret_length(
     if params is None:
         params = FiniteKeyParams()
 
-    # Check abort condition
-    if qber_upper > qber_abort_threshold or qber_upper >= 0.5:
-        return {
-            "ell_bits": 0.0,
-            "l_secret_bits": 0.0,
-            "key_rate_per_sifted": 0.0,
-            "aborted": True,
-            "leak_ec_bits": 0.0,
-            "delta_eps_bits": 0.0,
-            "qber_upper": qber_upper,
-        }
-
     if n_sifted <= 0:
         return {
             "ell_bits": 0.0,
@@ -253,6 +241,9 @@ def finite_key_secret_length(
             "leak_ec_bits": 0.0,
             "delta_eps_bits": 0.0,
             "qber_upper": qber_upper,
+            "finite_key_bound": 0.0,
+            "finite_key_status": "insecure",
+            "finite_key_reason": "NO-SECRET-KEY: no sifted bits",
         }
 
     # Error correction leakage: f_ec * n * h2(Q)
@@ -266,19 +257,34 @@ def finite_key_secret_length(
     secret_fraction = max(0.0, 1.0 - 2.0 * h2(qber_upper))
 
     # Extractable bits
-    ell_bits = n_sifted * secret_fraction - leak_ec_bits - delta_eps_bits
-    ell_bits = max(0.0, ell_bits)
+    raw_bound_bits = n_sifted * secret_fraction - leak_ec_bits - delta_eps_bits
 
-    key_rate_per_sifted = ell_bits / n_sifted if n_sifted > 0 else 0.0
+    aborted = bool(qber_upper > qber_abort_threshold or qber_upper >= 0.5)
+    if aborted:
+        status = "insecure"
+        reason = "NO-SECRET-KEY: qber_upper exceeds abort threshold"
+    elif raw_bound_bits <= 0.0:
+        status = "insecure"
+        reason = "NO-SECRET-KEY: finite-key bound non-positive"
+    else:
+        status = "secure"
+        reason = "finite-key bound positive"
+
+    ell_bits = max(0.0, raw_bound_bits) if status == "secure" else 0.0
+
+    key_rate_per_sifted = ell_bits / n_sifted if n_sifted > 0 and status == "secure" else 0.0
 
     return {
         "ell_bits": ell_bits,
         "l_secret_bits": ell_bits,
         "key_rate_per_sifted": key_rate_per_sifted,
-        "aborted": False,
+        "aborted": aborted,
         "leak_ec_bits": leak_ec_bits,
         "delta_eps_bits": delta_eps_bits,
         "qber_upper": qber_upper,
+        "finite_key_bound": raw_bound_bits,
+        "finite_key_status": status,
+        "finite_key_reason": reason,
     }
 
 
@@ -340,6 +346,11 @@ def finite_key_rate_per_pulse(
 
     # Step 3: Compute per-pulse rate
     key_rate_per_pulse = secret["ell_bits"] / n_sent if n_sent > 0 else 0.0
+    finite_key = {
+        "bound": float(secret["finite_key_bound"]),
+        "status": secret["finite_key_status"],
+        "reason": secret["finite_key_reason"],
+    }
 
     return {
         **bounds,
@@ -354,6 +365,7 @@ def finite_key_rate_per_pulse(
         "eps_total": params.eps_total,
         "ec_efficiency": params.ec_efficiency,
         "f_ec": params.ec_efficiency,
+        "finite_key": finite_key,
     }
 
 
@@ -403,6 +415,7 @@ def composable_finite_key_report(
         "secret_bits": result["ell_bits"],
         "key_rate_per_pulse": result["key_rate_per_pulse"],
         "aborted": result["aborted"],
+        "finite_key": result["finite_key"],
         "bound": {
             "name": "Hoeffding",
             "description": "QBER upper bound using Hoeffding inequality.",

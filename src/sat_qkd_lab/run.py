@@ -1432,7 +1432,11 @@ def _run_sweep_finite_key(
         n_sent_sweep,
         str(outdir / "figures" / "finite_key_rate_vs_n_sent.png"),
     )
-    print("Finite-key plots:", comparison_path, bits_path, penalty_path, rate_vs_n_sent_path)
+    rate_vs_blocksize_path = plot_finite_key_rate_vs_n_sent(
+        n_sent_sweep,
+        str(outdir / "figures" / "finite_key_rate_vs_blocksize.png"),
+    )
+    print("Finite-key plots:", comparison_path, bits_path, penalty_path, rate_vs_n_sent_path, rate_vs_blocksize_path)
 
     # Build report with finite-key data
     report = {
@@ -1476,6 +1480,7 @@ def _run_sweep_finite_key(
             "finite_key_bits_plot": "finite_key_bits_vs_loss.png",
             "finite_size_penalty_plot": "finite_size_penalty.png",
             "finite_key_rate_vs_n_sent_plot": "finite_key_rate_vs_n_sent.png",
+            "finite_key_rate_vs_blocksize_plot": "finite_key_rate_vs_blocksize.png",
         },
     }
 

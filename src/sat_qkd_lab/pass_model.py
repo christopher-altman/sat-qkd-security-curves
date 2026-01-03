@@ -266,6 +266,22 @@ def compute_pass_records(
                 qber_ci_low = None
                 qber_ci_high = None
 
+        finite_key_info = None
+        if finite_key is not None:
+            p_click_mean = det.eta * eta_ch_mean + p_bg_eff - det.eta * eta_ch_mean * p_bg_eff
+            n_sifted_mean = int(round(n_sent * 0.5 * p_click_mean))
+            n_errors_mean = int(round((0.0 if qber_mean != qber_mean else qber_mean) * n_sifted_mean))
+            fk_status = finite_key_rate_per_pulse(
+                n_sent=n_sent,
+                n_sifted=n_sifted_mean,
+                n_errors=n_errors_mean,
+                params=fk,
+                qber_abort_threshold=params.qber_abort_threshold,
+            )
+            finite_key_info = fk_status["finite_key"]
+            if finite_key_info["status"] != "secure":
+                key_rate_per_pulse = 0.0
+
         key_rate_bps = params.rep_rate_hz * key_rate_per_pulse
         secret_bits_dt = key_rate_bps * params.dt_seconds
 
@@ -299,6 +315,8 @@ def compute_pass_records(
                 qber_ci_high=qber_ci_high,
             )["headroom"],
         }
+        if finite_key_info is not None:
+            record["finite_key"] = finite_key_info
         if background_scale is not None:
             record["background_prob"] = float(p_bg_eff)
         if qber_z is not None and qber_x is not None:

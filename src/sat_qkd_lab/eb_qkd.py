@@ -84,10 +84,12 @@ def simulate_eb_qkd_expected(
         params=fk,
         qber_abort_threshold=p.qber_abort_threshold,
     )
+    finite_key_info = finite["finite_key"]
 
-    secret_fraction_finite = (
-        finite["ell_bits"] / n_sifted if n_sifted > 0 else 0.0
-    )
+    if finite_key_info["status"] == "secure" and n_sifted > 0:
+        secret_fraction_finite = finite["ell_bits"] / n_sifted
+    else:
+        secret_fraction_finite = 0.0
 
     return {
         "n_pairs": int(n_pairs),
@@ -97,9 +99,10 @@ def simulate_eb_qkd_expected(
         "qber_mean": float(qber_mean),
         "qber_upper": float(finite["qber_upper"]),
         "secret_fraction_finite": float(secret_fraction_finite),
-        "n_secret_est_finite": float(finite["ell_bits"]),
-        "key_rate_per_pair": float(finite["key_rate_per_pulse"]),
+        "n_secret_est_finite": float(finite["ell_bits"]) if finite_key_info["status"] == "secure" else 0.0,
+        "key_rate_per_pair": float(finite["key_rate_per_pulse"]) if finite_key_info["status"] == "secure" else 0.0,
         "aborted": bool(finite["aborted"]),
+        "finite_key": finite_key_info,
         "meta": {
             "loss_db": float(p.loss_db),
             "flip_prob": float(p.flip_prob),
