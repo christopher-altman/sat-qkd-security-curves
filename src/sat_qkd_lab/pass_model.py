@@ -118,6 +118,7 @@ def compute_pass_records(
     calibration: Optional[CalibrationModel] = None,
     fading: Optional[FadingParams] = None,
     pointing: Optional[PointingParams] = None,
+    background_scale: Optional[Sequence[float]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Compute per-time-step pass records and summary outputs.
@@ -155,6 +156,10 @@ def compute_pass_records(
     for t_s, el in zip(time_s, elevation_deg):
         loss_db = elevation_to_loss_db(float(el), link)
         p_bg_eff = background_prob(det.p_bg, link, params.background_mode)
+        if background_scale is not None:
+            idx = int(round(t_s / params.dt_seconds)) if params.dt_seconds > 0 else 0
+            idx = min(max(idx, 0), len(background_scale) - 1)
+            p_bg_eff = max(0.0, min(1.0, p_bg_eff * float(background_scale[idx])))
         eta_ch_mean = 10 ** (-loss_db / 10.0)
         if trans_multiplier is not None:
             idx = int(round(t_s / params.dt_seconds)) if params.dt_seconds > 0 else 0
@@ -262,6 +267,8 @@ def compute_pass_records(
                 qber_ci_high=qber_ci_high,
             )["headroom"],
         }
+        if background_scale is not None:
+            record["background_prob"] = float(p_bg_eff)
         if lock_state is not None and trans_multiplier is not None:
             idx = int(round(t_s / params.dt_seconds)) if params.dt_seconds > 0 else 0
             idx = min(max(idx, 0), len(lock_state) - 1)
@@ -337,6 +344,8 @@ def records_to_time_series(
         "secret_bits_dt": [float(r["secret_bits_dt"]) for r in records],
         "headroom": [float(r["headroom"]) for r in records],
     }
+    if "background_prob" in records[0]:
+        time_series["background_prob"] = [float(r["background_prob"]) for r in records]
     if "pointing_locked" in records[0]:
         time_series["pointing_locked"] = [int(bool(r.get("pointing_locked"))) for r in records]
     if include_ci and "qber_ci_low" in records[0]:
