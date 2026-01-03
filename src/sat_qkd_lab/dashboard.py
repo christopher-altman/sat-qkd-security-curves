@@ -21,7 +21,11 @@ DASHBOARD_PLOTS = {
     "chsh_s_vs_loss": "figures/chsh_s_vs_loss.png",
     "basis_bias_vs_elevation": "figures/basis_bias_vs_elevation.png",
     "clock_sync_diagnostics": "figures/clock_sync_diagnostics.png",
+    "sync_lock_state": "figures/sync_lock_state.png",
     "pass_fading_evolution": "figures/pass_fading_evolution.png",
+    "background_rate_vs_time": "figures/background_rate_vs_time.png",
+    "car_vs_time": "figures/car_vs_time.png",
+    "polarization_drift_vs_time": "figures/polarization_drift_vs_time.png",
 }
 
 
@@ -58,21 +62,38 @@ def _plot_index(outdir: Path) -> Dict[str, Optional[str]]:
     return index
 
 
-def _write_latest_dashboard(outdir: Path, last_action: Optional[str]) -> Dict[str, Any]:
+def _build_dashboard_state(
+    outdir: Path,
+    last_action: Optional[str],
+    ui_state: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     payload = {
         "schema_version": "1.0",
         "mode": "dashboard",
         "timestamp_utc": _timestamp_utc(),
         "last_action": last_action,
         "plots": _plot_index(outdir),
+        "ui": ui_state or {},
     }
+    return payload
+
+
+def _write_latest_dashboard(
+    outdir: Path,
+    last_action: Optional[str],
+    ui_state: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    payload = _build_dashboard_state(outdir, last_action, ui_state=ui_state)
     _write_json(outdir / "reports" / "latest_dashboard.json", payload)
     return payload
 
 
-def _redact_unblinded(output: Dict[str, Any]) -> Dict[str, Any]:
+def _gate_unblind_output(output: Dict[str, Any], allow_unblind: bool) -> Dict[str, Any]:
+    if allow_unblind:
+        return output
     redacted = dict(output)
-    redacted["analysis"] = {"group_labels_included": False}
+    if "analysis" in redacted:
+        redacted["analysis"] = {"group_labels_included": False}
     return redacted
 
 
@@ -89,10 +110,11 @@ def run() -> None:
 
     outdir = st.sidebar.text_input("Output directory", value=".")
     outdir_path = _ensure_outdir(outdir)
-    _write_latest_dashboard(outdir_path, last_action=None)
+    ui_unblind = st.sidebar.checkbox("Unblind (explicit)", value=False, key="ui_unblind")
+    _write_latest_dashboard(outdir_path, last_action=None, ui_state={"unblind": bool(ui_unblind)})
 
-    tab_sweep, tab_pass, tab_experiment, tab_forecast = st.tabs(
-        ["Sweep", "Pass", "Experiment", "Forecast"]
+    tab_sweep, tab_pass, tab_experiment, tab_forecast, tab_ops, tab_instrument, tab_protocol, tab_incidents = st.tabs(
+        ["Sweep", "Pass", "Experiment", "Forecast", "Ops", "Instrument", "Protocol", "Incidents"]
     )
 
     with tab_sweep:
@@ -123,7 +145,7 @@ def run() -> None:
                 },
             }
             _write_json(outdir_path / "reports" / "dashboard_sweep.json", report)
-            _write_latest_dashboard(outdir_path, last_action="sweep")
+            _write_latest_dashboard(outdir_path, last_action="sweep", ui_state={"unblind": bool(ui_unblind)})
             st.success("Sweep complete.")
             st.image(q_path)
             st.image(k_path)
@@ -160,7 +182,7 @@ def run() -> None:
                 },
             }
             _write_json(outdir_path / "reports" / "dashboard_pass.json", report)
-            _write_latest_dashboard(outdir_path, last_action="pass")
+            _write_latest_dashboard(outdir_path, last_action="pass", ui_state={"unblind": bool(ui_unblind)})
             st.success("Pass sweep complete.")
             st.image(elev_plot)
             st.image(secure_plot)
@@ -172,7 +194,7 @@ def run() -> None:
         block_seconds = st.number_input("Block seconds", value=30.0, key="exp_block_seconds")
         rep_rate_hz = st.number_input("Rep rate (Hz)", value=1e8, key="exp_rep_rate")
         seed = st.number_input("Seed", value=0, step=1, key="exp_seed")
-        unblind = st.checkbox("Unblind (explicit)", value=False, key="exp_unblind")
+        unblind = st.checkbox("Unblind (explicit)", value=bool(ui_unblind), key="exp_unblind")
 
         if st.button("Run experiment"):
             params = ExperimentParams(
@@ -183,9 +205,9 @@ def run() -> None:
                 pass_seconds=float(block_seconds) * int(n_blocks),
             )
             output = run_experiment(params, ["qber_mean", "headroom", "total_secret_bits"], outdir_path, None, unblind=bool(unblind))
-            _write_latest_dashboard(outdir_path, last_action="experiment")
+            _write_latest_dashboard(outdir_path, last_action="experiment", ui_state={"unblind": bool(ui_unblind)})
             st.success("Experiment complete.")
-            st.json(output if unblind else _redact_unblinded(output))
+            st.json(_gate_unblind_output(output, unblind))
 
     with tab_forecast:
         st.subheader("Forecast Scoring")
@@ -194,7 +216,7 @@ def run() -> None:
         block_seconds = st.number_input("Block seconds ", value=30.0, key="forecast_block_seconds")
         rep_rate_hz = st.number_input("Rep rate (Hz) ", value=1e8, key="forecast_rep_rate")
         seed = st.number_input("Seed ", value=0, step=1, key="forecast_seed")
-        unblind = st.checkbox("Unblind forecast output", value=False, key="forecast_unblind")
+        unblind = st.checkbox("Unblind forecast output", value=bool(ui_unblind), key="forecast_unblind")
 
         if st.button("Run forecast"):
             output = run_forecast_harness(
@@ -206,9 +228,60 @@ def run() -> None:
                 rep_rate_hz=float(rep_rate_hz),
                 unblind=bool(unblind),
             )
-            _write_latest_dashboard(outdir_path, last_action="forecast")
+            _write_latest_dashboard(outdir_path, last_action="forecast", ui_state={"unblind": bool(ui_unblind)})
             st.success("Forecast scoring complete.")
-            st.json(output)
+            st.json(_gate_unblind_output(output, unblind))
+
+    with tab_ops:
+        st.subheader("Ops")
+        inventory = _read_json(outdir_path / "reports" / "constellation_inventory.json")
+        if inventory:
+            st.write("Constellation inventory")
+            st.line_chart(inventory.get("inventory", {}).get("inventory_bits", []))
+            if inventory.get("schedule"):
+                st.dataframe(inventory["schedule"])
+        else:
+            st.write("No constellation inventory report found.")
+
+    with tab_instrument:
+        st.subheader("Instrument")
+        sync_report = _read_json(outdir_path / "reports" / "latest_clock_sync.json")
+        if sync_report:
+            st.write("Sync lock state")
+            sync_plot = outdir_path / "figures" / "sync_lock_state.png"
+            if sync_plot.exists():
+                st.image(str(sync_plot))
+        pass_report = _read_json(outdir_path / "reports" / "latest_pass.json")
+        if pass_report and "time_series" in pass_report:
+            series = pass_report["time_series"]
+            if "background_rate_hz" in series:
+                st.line_chart(series["background_rate_hz"])
+            if "polarization_angle_deg" in series:
+                st.line_chart(series["polarization_angle_deg"])
+            if "polarization_angle_comp_deg" in series:
+                st.line_chart(series["polarization_angle_comp_deg"])
+
+    with tab_protocol:
+        st.subheader("Protocol")
+        forecast = _read_json(outdir_path / "reports" / "forecast_blinded.json")
+        if forecast:
+            st.write("Forecast scoring (blinded)")
+            st.dataframe(forecast.get("scores", []))
+            if ui_unblind:
+                forecast_unblind = _read_json(outdir_path / "reports" / "forecast_unblinded.json")
+                if forecast_unblind:
+                    st.write("Unblinded analysis")
+                    st.json(forecast_unblind.get("analysis", {}))
+        else:
+            st.write("No forecast report found.")
+
+    with tab_incidents:
+        st.subheader("Incidents")
+        pass_report = _read_json(outdir_path / "reports" / "latest_pass.json")
+        if pass_report and pass_report.get("incidents"):
+            st.dataframe(pass_report["incidents"])
+        else:
+            st.write("No incident cards available.")
 
     with st.expander("Plot index", expanded=False):
         plot_index = _plot_index(outdir_path)
