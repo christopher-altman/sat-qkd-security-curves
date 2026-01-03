@@ -46,6 +46,54 @@ test -x .venv/bin/python || $PY -m venv .venv
 ./pytest -q
 ```
 
+## Repository layout
+
+```
+.
+├─ src/sat_qkd_lab/
+│  ├─ run.py
+│  ├─ plotting.py
+│  ├─ attacks.py
+│  ├─ pass_model.py
+│  ├─ experiment.py
+│  ├─ forecast.py
+│  ├─ windows.py
+│  ├─ scoring.py
+│  ├─ eb_qkd.py
+│  └─ finite_key.py
+├─ tests/
+│  ├─ test_forecast_harness.py
+│  ├─ test_eb_pass_experiment.py
+│  ├─ test_pass_sweep_pulse_accounting.py
+│  └─ test_basic.py
+├─ figures/
+│  ├─ key_rate_vs_elevation.png
+│  ├─ secure_window.png
+│  └─ qber_headroom_vs_loss.png
+├─ reports/
+│  ├─ latest_pass.json
+│  ├─ latest_experiment.json
+│  └─ forecast_blinded.json
+└─ docs/
+   ├─ report-P9-ROB_EXPERIMENT_HARNESS.md
+   ├─ diff-P9-ROB_EXPERIMENT_HARNESS.md
+   ├─ report-P10-MPI_FORECAST_HARNESS.md
+   └─ diff-P10-MPI_FORECAST_HARNESS.md
+```
+
+## Command map
+
+```bash
+./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 200000
+./py -m sat_qkd_lab.run pass-sweep --max-elevation 70 --pass-duration 300
+./py -m sat_qkd_lab.run experiment-run --n-blocks 20 --block-seconds 30 --outdir .
+./py -m sat_qkd_lab.run forecast-run --forecasts forecasts.json --outdir .
+```
+
+## Artifacts & provenance
+
+Each prompt writes `docs/report-P{N}-...` and `docs/diff-P{N}-...`. Reports include a verbatim `ls -l docs` gating proof for traceability.
+
 ## Problem / Phenomenon Investigated
 
 Satellite and fibre Quantum Key Distribution (QKD) systems live or die on a simple fact: bits can still flow while secrecy collapses. This experiment creates a reproducible “security curve” lab: simulate BB84 under realistic loss/noise and a textbook intercept–resend attacker, then compute QBER and the asymptotic secret-key fraction.
