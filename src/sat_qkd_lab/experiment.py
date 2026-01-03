@@ -15,6 +15,7 @@ import numpy as np
 
 from .finite_key import FiniteKeyParams, finite_key_rate_per_pulse
 from .helpers import h2
+from .eb_observables import compute_observables
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,7 @@ def _simulate_block_metrics(
     params: ExperimentParams,
     rng: random.Random,
     finite_key: Optional[FiniteKeyParams],
+    bell_mode: bool,
 ) -> Dict[str, float]:
     """Simulate per-block metrics with optional finite-key calculation."""
     qber_mean = params.base_qber + rng.gauss(0.0, params.qber_jitter)
@@ -86,11 +88,39 @@ def _simulate_block_metrics(
     total_secret_bits = key_rate_per_pulse * n_sent
     headroom = params.qber_abort_threshold - qber_mean
 
-    return {
+    metrics: Dict[str, Any] = {
         "qber_mean": float(qber_mean),
         "headroom": float(headroom),
         "total_secret_bits": float(total_secret_bits),
     }
+    if bell_mode:
+        n_pairs = max(1, n_sifted)
+        visibility_est = 1.0 - 2.0 * qber_mean
+        visibility_est = min(1.0, max(-1.0, visibility_est))
+        matrix_z = _counts_from_correlation(n_pairs, visibility_est)
+        matrix_x = _counts_from_correlation(n_pairs, visibility_est)
+        matrix_anti = _counts_from_correlation(n_pairs, -visibility_est)
+        obs = compute_observables(
+            correlation_counts={
+                "AB": matrix_z,
+                "ABp": matrix_x,
+                "ApB": matrix_z,
+                "ApBp": matrix_anti,
+            },
+            n_pairs=n_pairs,
+        )
+        metrics["bell"] = {
+            "coincidence_matrices": {
+                "Z": matrix_z,
+                "X": matrix_x,
+            },
+            "visibility": float(obs.visibility),
+            "chsh_s": float(obs.chsh_s),
+            "chsh_sigma": float(obs.chsh_sigma),
+            "correlations": obs.correlations,
+        }
+
+    return metrics
 
 
 def simulate_block_metrics(
@@ -98,9 +128,22 @@ def simulate_block_metrics(
     params: ExperimentParams,
     rng: random.Random,
     finite_key: Optional[FiniteKeyParams],
+    bell_mode: bool = False,
 ) -> Dict[str, float]:
     """Public wrapper for block metric simulation."""
-    return _simulate_block_metrics(label, params, rng, finite_key)
+    return _simulate_block_metrics(label, params, rng, finite_key, bell_mode)
+
+
+def _counts_from_correlation(n_pairs: int, correlation: float) -> List[List[int]]:
+    total = max(1, int(n_pairs))
+    corr = min(1.0, max(-1.0, float(correlation)))
+    n_same = int(round((1.0 + corr) * 0.5 * total))
+    n_diff = total - n_same
+    n00 = n_same // 2
+    n11 = n_same - n00
+    n01 = n_diff // 2
+    n10 = n_diff - n01
+    return [[n00, n01], [n10, n11]]
 
 
 def _difference_in_means(values_control: List[float], values_intervention: List[float]) -> Dict[str, Optional[float]]:
@@ -160,6 +203,7 @@ def run_experiment(
     metrics: List[str],
     outdir: Path,
     finite_key: Optional[FiniteKeyParams],
+    bell_mode: bool = False,
     unblind: bool = False,
 ) -> Dict[str, Any]:
     """Run blinded experiment and write outputs to disk."""
@@ -209,13 +253,15 @@ def run_experiment(
 
     block_results = []
     for i, label in enumerate(labels):
-        metrics_out = _simulate_block_metrics(label, params, rng, finite_key)
+        metrics_out = _simulate_block_metrics(label, params, rng, finite_key, bell_mode)
         block_results.append({
             "block_index": i,
             "t_start_seconds": float(i * params.block_seconds),
             "t_end_seconds": float((i + 1) * params.block_seconds),
             "metrics": {k: metrics_out[k] for k in metrics},
         })
+        if bell_mode and "bell" in metrics_out:
+            block_results[-1]["bell"] = metrics_out["bell"]
 
     analysis_metrics: Dict[str, Any] = {}
     if unblind:
@@ -264,6 +310,7 @@ def run_experiment(
             "rep_rate_hz": params.rep_rate_hz,
             "pass_seconds": params.pass_seconds,
             "metrics": metrics,
+            "bell_mode": bool(bell_mode),
             "finite_key": {
                 "enabled": finite_key is not None,
                 "epsilon_sec": finite_key.eps_sec if finite_key is not None else None,

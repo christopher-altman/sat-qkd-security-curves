@@ -351,6 +351,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Secrecy failure probability")
     ex.add_argument("--eps-cor", type=float, default=1e-15,
                     help="Correctness failure probability")
+    ex.add_argument("--bell-mode", action="store_true",
+                    help="Include Bell/visibility observables in outputs")
     ex.add_argument("--unblind", action="store_true",
                     help="Write unblinded schedule and include group analysis")
     ex.add_argument("--outdir", type=str, default=".",
@@ -1866,6 +1868,7 @@ def _run_experiment(args: argparse.Namespace) -> None:
         metrics=args.metrics,
         outdir=outdir,
         finite_key=finite_key_params,
+        bell_mode=args.bell_mode,
         unblind=args.unblind,
     )
     print("Wrote:", outdir / "reports" / "latest_experiment.json")
