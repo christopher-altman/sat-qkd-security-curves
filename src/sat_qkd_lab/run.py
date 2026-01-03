@@ -56,6 +56,7 @@ from .plotting import (
     plot_calibration_quality_card,
     plot_calibration_residuals,
     plot_polarization_drift_vs_time,
+    plot_pol_rotation_vs_elevation,
 )
 from .free_space_link import FreeSpaceLinkParams, generate_elevation_profile
 from .detector import DetectorParams, DEFAULT_DETECTOR
@@ -389,6 +390,12 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Enable polarization compensation loop")
     ps.add_argument("--pol-comp-lag-s", type=float, default=5.0,
                     help="Compensation lag in seconds")
+    ps.add_argument("--pol-rotation", action="store_true",
+                    help="Enable motion-induced polarization rotation model")
+    ps.add_argument("--pol-rotation-max-deg", type=float, default=8.0,
+                    help="Rotation angle at zenith in degrees")
+    ps.add_argument("--basis-bias-max", type=float, default=0.15,
+                    help="Maximum basis bias magnitude")
     # Time-correlated background process
     ps.add_argument("--background-process", action="store_true",
                     help="Enable time-correlated background process")
@@ -774,6 +781,8 @@ def _validate_args(args: argparse.Namespace) -> None:
         validate_float("pol-drift-sigma-deg", args.pol_drift_sigma_deg, min_value=0.0)
         validate_seed(args.pol_drift_seed)
         validate_float("pol-comp-lag-s", args.pol_comp_lag_s, min_value=0.0)
+        validate_float("pol-rotation-max-deg", args.pol_rotation_max_deg, min_value=0.0)
+        validate_float("basis-bias-max", args.basis_bias_max, min_value=0.0)
         time_s, _ = generate_elevation_profile(
             max_elevation_deg=args.max_elevation,
             min_elevation_deg=args.min_elevation,
@@ -1662,6 +1671,16 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         time_step_s=args.time_step,
         pass_duration_s=args.pass_duration,
     )
+    basis_bias = None
+    rotation_rad = None
+    if args.pol_rotation:
+        bias_params = BasisBiasParams(
+            max_bias=args.basis_bias_max,
+            rotation_deg_at_zenith=args.pol_rotation_max_deg,
+        )
+        bias_vals, rotation_deg = basis_bias_from_elevation(elevation_deg, bias_params)
+        basis_bias = bias_vals
+        rotation_rad = np.deg2rad(rotation_deg)
     fading_ou_values = None
     fading_ou_stats = None
     outage_stats = None
@@ -1709,6 +1728,8 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
             seed=args.pol_drift_seed,
         )
         polarization_raw = simulate_polarization_drift(time_s, drift_params)
+        if rotation_rad is not None:
+            polarization_raw = polarization_raw + rotation_rad
         if args.pol_compensate:
             comp_params = CompensationParams(
                 enabled=True,
@@ -1719,8 +1740,13 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
                 polarization_raw,
                 comp_params,
             )
+            if rotation_rad is not None:
+                polarization_angle = polarization_angle + rotation_rad
         else:
             polarization_angle = polarization_raw
+    elif rotation_rad is not None:
+        polarization_raw = rotation_rad
+        polarization_angle = rotation_rad
 
     pulses_schedule, total_sent = _resolve_pass_pulse_accounting(args, len(time_s))
     rep_rate_hz = args.rep_rate if args.rep_rate is not None else total_sent / args.pass_duration
@@ -1888,7 +1914,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
             str(outdir / "figures" / "background_rate_vs_time.png"),
         )
         print("Plot:", bg_plot_path)
-    if args.pol_drift and polarization_raw is not None:
+    if (args.pol_drift or args.pol_rotation) and polarization_raw is not None:
         corrected_deg = None
         if polarization_angle is not None and polarization_angle is not polarization_raw:
             corrected_deg = np.rad2deg(polarization_angle)
@@ -1899,6 +1925,13 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
             str(outdir / "figures" / "polarization_drift_vs_time.png"),
         )
         print("Plot:", drift_plot_path)
+    if args.pol_rotation and rotation_rad is not None:
+        rotation_plot_path = plot_pol_rotation_vs_elevation(
+            np.array(elevation_deg, dtype=float),
+            np.rad2deg(rotation_rad),
+            str(outdir / "figures" / "pol_rotation_vs_elevation.png"),
+        )
+        print("Plot:", rotation_plot_path)
 
     if args.filter_bandwidth_nm > 0:
         bw_vals = np.linspace(0.5, max(0.5, args.filter_bandwidth_nm * 2.0), 10)
@@ -1995,7 +2028,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         pass_time_series["background_rate_hz"] = [
             float(p) * rep_rate_hz for p in pass_time_series["background_prob"]
         ]
-    if args.pol_drift and polarization_raw is not None:
+    if (args.pol_drift or args.pol_rotation) and polarization_raw is not None:
         pass_time_series["polarization_angle_deg"] = [
             float(v) for v in np.rad2deg(polarization_raw)
         ]
@@ -2003,6 +2036,12 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
             pass_time_series["polarization_angle_comp_deg"] = [
                 float(v) for v in np.rad2deg(polarization_angle)
             ]
+    if args.pol_rotation and rotation_rad is not None:
+        pass_time_series["pol_rotation_deg"] = [
+            float(v) for v in np.rad2deg(rotation_rad)
+        ]
+    if basis_bias is not None:
+        pass_time_series["basis_bias"] = [float(v) for v in basis_bias]
     if args.fading_ou and fading_ou_values is not None:
         pass_time_series["fading_ou_transmittance"] = [
             float(v) for v in fading_ou_values
@@ -2076,6 +2115,8 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         assumptions.append("fading_model lognormal applied to transmittance samples")
     if args.fading_ou:
         assumptions.append("fading_ou uses OU time-correlated transmittance multiplier")
+    if args.pol_rotation:
+        assumptions.append("pol_rotation adds elevation-dependent polarization rotation")
     if args.pointing:
         assumptions.append("pointing_model applies acquisition/track/dropout transmittance multiplier")
     assumptions.append("optical_chain scales background with filter bandwidth and temperature")
@@ -2088,6 +2129,8 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         plots["background_rate_vs_time"] = "figures/background_rate_vs_time.png"
     if args.pol_drift:
         plots["polarization_drift_vs_time"] = "figures/polarization_drift_vs_time.png"
+    if args.pol_rotation:
+        plots["pol_rotation_vs_elevation"] = "figures/pol_rotation_vs_elevation.png"
     if args.fading:
         plots["eta_fading_samples"] = "figures/eta_fading_samples.png"
         plots["secure_window_fading_impact"] = "figures/secure_window_fading_impact.png"
@@ -2140,6 +2183,11 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
                     "enabled": bool(args.pol_compensate),
                     "lag_seconds": float(args.pol_comp_lag_s),
                 },
+            },
+            "pol_rotation": {
+                "enabled": bool(args.pol_rotation),
+                "rotation_max_deg": float(args.pol_rotation_max_deg),
+                "basis_bias_max": float(args.basis_bias_max),
             },
             "optical_chain": {
                 "filter_bandwidth_nm": float(args.filter_bandwidth_nm),
@@ -2196,6 +2244,8 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
             "fading_var": "unitless",
             "fading_corr_time_seconds": "s",
             "background_rate_hz": "Hz",
+            "pol_rotation_deg": "deg",
+            "basis_bias": "unitless",
         },
         "time_series": pass_time_series,
         "summary": summary_pass,
@@ -2216,6 +2266,15 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
             "matrix_x": [r["matrix_x"] for r in records_pass if "matrix_x" in r],
         }
         pass_report["polarization_drift"] = pol_section
+    if args.pol_rotation and rotation_rad is not None:
+        pass_report["pol"] = {
+            "rotation_angle_deg": [float(v) for v in np.rad2deg(rotation_rad)],
+        }
+    if basis_bias is not None:
+        pass_report["basis"] = {
+            "bias_mean": float(np.mean(basis_bias)) if len(basis_bias) else 0.0,
+            "bias_std": float(np.std(basis_bias, ddof=1)) if len(basis_bias) > 1 else 0.0,
+        }
     if fading_variance is not None:
         pass_report["summary"]["fading_variance"] = fading_variance
     if fragment_stats is not None:
