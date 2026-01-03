@@ -41,6 +41,7 @@ from .free_space_link import FreeSpaceLinkParams, generate_elevation_profile
 from .detector import DetectorParams, DEFAULT_DETECTOR
 from .decoy_bb84 import DecoyParams, sweep_decoy_loss
 from .attacks import Attack, AttackConfig
+from .calibration import CalibrationModel
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -109,6 +110,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Fraction of sifted bits used for parameter estimation")
     s.add_argument("--m-pe", type=int, default=None,
                    help="Explicit parameter estimation sample size (overrides --pe-frac)")
+    s.add_argument("--calibration-file", type=str, default=None,
+                   help="Optional JSON file with calibration specs (off by default)")
 
     # --- decoy-sweep command ---
     d = sub.add_parser("decoy-sweep", help="Decoy-state BB84 sweep over loss.")
@@ -399,6 +402,18 @@ def _resolve_n_sent_for_sweep(args: argparse.Namespace) -> int:
     return n_sent
 
 
+def _load_calibration_model(args: argparse.Namespace) -> Any:
+    """Load calibration model if --calibration-file is provided.
+
+    Returns:
+        CalibrationModel instance if file provided, else None
+    """
+    if hasattr(args, "calibration_file") and args.calibration_file is not None:
+        print(f"Loading calibration from {args.calibration_file}")
+        return CalibrationModel.from_file(args.calibration_file)
+    return None
+
+
 def _resolve_pass_pulse_accounting(args: argparse.Namespace, n_steps: int) -> tuple[list[int], int]:
     """Resolve per-step pulse schedule and total pulses for pass-sweep.
 
@@ -442,6 +457,9 @@ def _run_sweep(args: argparse.Namespace) -> None:
         blinding_prob=args.blinding_prob,
     )
 
+    # Load optional calibration model
+    calibration = _load_calibration_model(args)
+
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     (outdir / "figures").mkdir(exist_ok=True)
@@ -479,6 +497,11 @@ def _run_sweep(args: argparse.Namespace) -> None:
 
         # Add engineering outputs and headroom to each record
         for rec in no_attack:
+            # Apply calibration first if provided
+            if calibration:
+                calibrated_rec = calibration.apply_to_record(rec, loss_db=rec.get("loss_db"))
+                rec.update(calibrated_rec)
+
             # Engineering outputs
             eng_out = compute_engineering_outputs(
                 rec["key_rate_per_pulse_mean"],
@@ -497,6 +520,11 @@ def _run_sweep(args: argparse.Namespace) -> None:
             rec.update(headroom)
 
         for rec in attack:
+            # Apply calibration first if provided
+            if calibration:
+                calibrated_rec = calibration.apply_to_record(rec, loss_db=rec.get("loss_db"))
+                rec.update(calibrated_rec)
+
             eng_out = compute_engineering_outputs(
                 rec["key_rate_per_pulse_mean"],
                 rep_rate_hz=args.rep_rate_hz,
@@ -583,6 +611,10 @@ def _run_sweep(args: argparse.Namespace) -> None:
             report["parameters"]["rep_rate_hz"] = args.rep_rate_hz
         if args.target_bits is not None:
             report["parameters"]["target_bits"] = args.target_bits
+
+        # Add calibration metadata if applied
+        if calibration:
+            report["calibration"] = calibration.get_metadata()
     else:
         # Single trial (original behavior)
         no_attack = sweep_loss(
@@ -605,6 +637,11 @@ def _run_sweep(args: argparse.Namespace) -> None:
 
         # Add engineering outputs and headroom to each record
         for rec in no_attack:
+            # Apply calibration first if provided
+            if calibration:
+                calibrated_rec = calibration.apply_to_record(rec, loss_db=rec.get("loss_db"))
+                rec.update(calibrated_rec)
+
             eng_out = compute_engineering_outputs(
                 rec["key_rate_per_pulse"],
                 rep_rate_hz=args.rep_rate_hz,
@@ -617,6 +654,11 @@ def _run_sweep(args: argparse.Namespace) -> None:
             rec.update(headroom)
 
         for rec in attack:
+            # Apply calibration first if provided
+            if calibration:
+                calibrated_rec = calibration.apply_to_record(rec, loss_db=rec.get("loss_db"))
+                rec.update(calibrated_rec)
+
             eng_out = compute_engineering_outputs(
                 rec["key_rate_per_pulse"],
                 rep_rate_hz=args.rep_rate_hz,
@@ -686,6 +728,10 @@ def _run_sweep(args: argparse.Namespace) -> None:
             report["parameters"]["rep_rate_hz"] = args.rep_rate_hz
         if args.target_bits is not None:
             report["parameters"]["target_bits"] = args.target_bits
+
+        # Add calibration metadata if applied
+        if calibration:
+            report["calibration"] = calibration.get_metadata()
 
     with open(outdir / "reports" / "latest.json", "w") as f:
         json.dump(report, f, indent=2)
