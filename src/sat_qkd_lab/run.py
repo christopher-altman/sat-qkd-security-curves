@@ -119,6 +119,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Blinding mode (loud or stealth)")
     s.add_argument("--blinding-prob", type=float, default=0.05,
                    help="Forced click probability for blinding attack")
+    s.add_argument("--leakage-fraction", type=float, default=0.0,
+                   help="Information leakage fraction (0..1)")
     s.add_argument("--eta-z", type=float, default=None,
                    help="Z-basis detection efficiency (default: --eta)")
     s.add_argument("--eta-x", type=float, default=None,
@@ -224,6 +226,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Blinding mode (loud or stealth)")
     a.add_argument("--blinding-prob", type=float, default=0.05,
                    help="Forced click probability for blinding attack")
+    a.add_argument("--leakage-fraction", type=float, default=0.0,
+                   help="Information leakage fraction (0..1)")
 
     # --- pass-sweep command ---
     ps = sub.add_parser("pass-sweep", help="Simulate QKD during a satellite pass over elevation profile.")
@@ -504,6 +508,7 @@ def _validate_args(args: argparse.Namespace) -> None:
         validate_float("mu", args.mu, min_value=0.0)
         validate_float("timeshift-bias", args.timeshift_bias, min_value=0.0, max_value=1.0)
         validate_float("blinding-prob", args.blinding_prob, min_value=0.0, max_value=1.0)
+        validate_float("leakage-fraction", args.leakage_fraction, min_value=0.0, max_value=1.0)
         if args.eta_z is not None:
             validate_float("eta-z", args.eta_z, min_value=0.0, max_value=1.0)
         if args.eta_x is not None:
@@ -529,6 +534,7 @@ def _validate_args(args: argparse.Namespace) -> None:
         validate_float("mu", args.mu, min_value=0.0)
         validate_float("timeshift-bias", args.timeshift_bias, min_value=0.0, max_value=1.0)
         validate_float("blinding-prob", args.blinding_prob, min_value=0.0, max_value=1.0)
+        validate_float("leakage-fraction", args.leakage_fraction, min_value=0.0, max_value=1.0)
         if args.eta_z is not None:
             validate_float("eta-z", args.eta_z, min_value=0.0, max_value=1.0)
         if args.eta_x is not None:
@@ -718,6 +724,7 @@ def _run_sweep(args: argparse.Namespace) -> None:
         timeshift_bias=args.timeshift_bias,
         blinding_mode=args.blinding_mode,
         blinding_prob=args.blinding_prob,
+        leakage_fraction=args.leakage_fraction,
     )
 
     # Load optional calibration model
@@ -860,6 +867,7 @@ def _run_sweep(args: argparse.Namespace) -> None:
                 "timeshift_bias": args.timeshift_bias,
                 "blinding_mode": args.blinding_mode,
                 "blinding_prob": args.blinding_prob,
+                "leakage_fraction": args.leakage_fraction,
             },
             "artifacts": {
                 "qber_ci_plot": "qber_vs_loss_ci.png",
@@ -874,6 +882,9 @@ def _run_sweep(args: argparse.Namespace) -> None:
             report["parameters"]["rep_rate_hz"] = args.rep_rate_hz
         if args.target_bits is not None:
             report["parameters"]["target_bits"] = args.target_bits
+        if args.leakage_fraction > 0.0:
+            leak_vals = [rec.get("leakage_budget_bits", 0.0) for rec in attack]
+            report["parameters"]["leakage_budget_bits"] = float(np.mean(leak_vals)) if leak_vals else 0.0
 
         # Add calibration metadata if applied
         if calibration:
@@ -977,6 +988,7 @@ def _run_sweep(args: argparse.Namespace) -> None:
                 "timeshift_bias": args.timeshift_bias,
                 "blinding_mode": args.blinding_mode,
                 "blinding_prob": args.blinding_prob,
+                "leakage_fraction": args.leakage_fraction,
             },
             "artifacts": {
                 "qber_plot": str(Path(q_path).name),
@@ -991,6 +1003,9 @@ def _run_sweep(args: argparse.Namespace) -> None:
             report["parameters"]["rep_rate_hz"] = args.rep_rate_hz
         if args.target_bits is not None:
             report["parameters"]["target_bits"] = args.target_bits
+        if args.leakage_fraction > 0.0:
+            leak_vals = [rec.get("leakage_budget_bits", 0.0) for rec in attack]
+            report["parameters"]["leakage_budget_bits"] = float(np.mean(leak_vals)) if leak_vals else 0.0
 
         # Add calibration metadata if applied
         if calibration:
@@ -1020,6 +1035,7 @@ def _run_attack_sweep(args: argparse.Namespace) -> None:
             timeshift_bias=args.timeshift_bias,
             blinding_mode=args.blinding_mode,
             blinding_prob=args.blinding_prob,
+            leakage_fraction=args.leakage_fraction,
         )
         records = sweep_loss(
             loss_vals,
@@ -1057,11 +1073,17 @@ def _run_attack_sweep(args: argparse.Namespace) -> None:
             "timeshift_bias": args.timeshift_bias,
             "blinding_mode": args.blinding_mode,
             "blinding_prob": args.blinding_prob,
+            "leakage_fraction": args.leakage_fraction,
+            "leakage_fraction": args.leakage_fraction,
         },
         "artifacts": {
             "attack_comparison_plot": "attack_comparison_key_rate.png",
         },
     }
+
+    if args.leakage_fraction > 0.0:
+        leak_vals = [rec.get("leakage_budget_bits", 0.0) for rec in attack]
+        report["parameters"]["leakage_budget_bits"] = float(np.mean(leak_vals)) if leak_vals else 0.0
 
     with open(outdir / "reports" / "latest.json", "w") as f:
         json.dump(report, f, indent=2)
@@ -1094,6 +1116,7 @@ def _run_sweep_finite_key(
         timeshift_bias=args.timeshift_bias,
         blinding_mode=args.blinding_mode,
         blinding_prob=args.blinding_prob,
+        leakage_fraction=args.leakage_fraction,
     )
 
     # Run finite-key sweep for no-attack scenario

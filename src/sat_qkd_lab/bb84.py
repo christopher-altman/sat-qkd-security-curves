@@ -161,7 +161,7 @@ def simulate_bb84(
             n_secret_est=0,
             aborted=True,
             meta=_meta(loss_db, flip_prob, attack, sample_frac, qber_abort_threshold,
-                       ec_efficiency, seed, det, config, pns_multi),
+                       ec_efficiency, seed, det, config, pns_multi, 0.0),
         )
 
     # For signal clicks, determine incoming bits (possibly through Eve)
@@ -214,7 +214,7 @@ def simulate_bb84(
             n_secret_est=0,
             aborted=True,
             meta=_meta(loss_db, flip_prob, attack, sample_frac, qber_abort_threshold,
-                       ec_efficiency, seed, det, config, pns_multi),
+                       ec_efficiency, seed, det, config, pns_multi, 0.0),
         )
 
     # Estimate QBER from a random sample
@@ -240,6 +240,14 @@ def simulate_bb84(
         n_raw_key = n_sift - n_sample
         n_secret_est = int(np.floor(n_raw_key * secret_fraction))
 
+    leakage_fraction = float(config.leakage_fraction)
+    leakage_budget_bits = 0.0
+    if leakage_fraction > 0.0 and not aborted:
+        leakage_budget_bits = leakage_fraction * n_sift
+        secret_fraction *= max(0.0, 1.0 - leakage_fraction)
+        n_raw_key = n_sift - n_sample
+        n_secret_est = int(np.floor(n_raw_key * secret_fraction))
+
     return RunSummary(
         n_sent=n_pulses,
         n_received=int(idx.size),
@@ -249,7 +257,7 @@ def simulate_bb84(
         n_secret_est=n_secret_est,
         aborted=aborted,
         meta=_meta(loss_db, flip_prob, attack, sample_frac, qber_abort_threshold,
-                   ec_efficiency, seed, det, config, pns_multi),
+                   ec_efficiency, seed, det, config, pns_multi, leakage_budget_bits),
     )
 
 def _meta(
@@ -263,6 +271,7 @@ def _meta(
     detector: DetectorParams,
     config: AttackConfig,
     pns_multi: Optional[float],
+    leakage_budget_bits: float,
 ) -> Dict[str, Any]:
     return {
         "loss_db": float(loss_db),
@@ -278,6 +287,8 @@ def _meta(
         "eta_x": float(detector.eta_x if detector.eta_x is not None else detector.eta),
         "attack_mu": float(config.mu),
         "timeshift_bias": float(config.timeshift_bias),
+        "leakage_fraction": float(config.leakage_fraction),
+        "leakage_budget_bits": float(leakage_budget_bits),
         "blinding_mode": str(config.blinding_mode),
         "blinding_prob": float(config.blinding_prob),
         "pns_multi_photon_frac": float(pns_multi) if pns_multi is not None else None,
