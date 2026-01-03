@@ -48,7 +48,13 @@ from .calibration import CalibrationModel
 from .pass_model import PassModelParams, compute_pass_records, records_to_time_series
 from .experiment import ExperimentParams, run_experiment
 from .forecast_harness import run_forecast_harness
-from .timetags import generate_pair_time_tags, generate_background_time_tags, merge_time_tags
+from .timetags import (
+    generate_pair_time_tags,
+    generate_background_time_tags,
+    merge_time_tags,
+    apply_dead_time,
+    add_afterpulsing,
+)
 from .coincidence import match_coincidences
 from .eb_observables import compute_observables
 
@@ -320,6 +326,14 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Timing jitter sigma in picoseconds")
     cs.add_argument("--tau-ps", type=float, default=200.0,
                     help="Coincidence window in picoseconds")
+    cs.add_argument("--dead-time-ps", type=float, default=0.0,
+                    help="Detector dead time in picoseconds")
+    cs.add_argument("--afterpulse-prob", type=float, default=0.0,
+                    help="Afterpulsing probability per detection")
+    cs.add_argument("--afterpulse-window-ps", type=float, default=0.0,
+                    help="Afterpulse window in picoseconds")
+    cs.add_argument("--afterpulse-decay-ps", type=float, default=0.0,
+                    help="Afterpulse decay time in picoseconds (0 = flat)")
     cs.add_argument("--seed", type=int, default=0)
     cs.add_argument("--outdir", type=str, default=".",
                     help="Output directory for figures/reports (default: .)")
@@ -509,6 +523,10 @@ def _validate_args(args: argparse.Namespace) -> None:
         validate_float("background-rate-hz", args.background_rate_hz, min_value=0.0)
         validate_float("jitter-ps", args.jitter_ps, min_value=0.0)
         validate_float("tau-ps", args.tau_ps, min_value=1e-9)
+        validate_float("dead-time-ps", args.dead_time_ps, min_value=0.0)
+        validate_float("afterpulse-prob", args.afterpulse_prob, min_value=0.0, max_value=1.0)
+        validate_float("afterpulse-window-ps", args.afterpulse_window_ps, min_value=0.0)
+        validate_float("afterpulse-decay-ps", args.afterpulse_decay_ps, min_value=0.0)
         validate_seed(args.seed)
         validate_float("min-visibility", args.min_visibility, min_value=0.0, max_value=1.0)
         validate_float("min-chsh-s", args.min_chsh_s, min_value=0.0)
@@ -1498,6 +1516,9 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
     loss_values = np.linspace(args.loss_min, args.loss_max, args.steps)
     sigma_s = args.jitter_ps * 1e-12
     tau_s = args.tau_ps * 1e-12
+    dead_time_s = args.dead_time_ps * 1e-12
+    afterpulse_window_s = args.afterpulse_window_ps * 1e-12
+    afterpulse_decay_s = args.afterpulse_decay_ps * 1e-12
 
     rng = np.random.default_rng(args.seed)
     records = []
@@ -1528,6 +1549,26 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
         )
         tags_a = merge_time_tags(sig_a, bg_a)
         tags_b = merge_time_tags(sig_b, bg_b)
+
+        if args.afterpulse_prob > 0.0 and afterpulse_window_s > 0.0:
+            tags_a = add_afterpulsing(
+                tags_a,
+                p_afterpulse=args.afterpulse_prob,
+                window_s=afterpulse_window_s,
+                decay=afterpulse_decay_s,
+                seed=args.seed + 2000 + idx * 2,
+            )
+            tags_b = add_afterpulsing(
+                tags_b,
+                p_afterpulse=args.afterpulse_prob,
+                window_s=afterpulse_window_s,
+                decay=afterpulse_decay_s,
+                seed=args.seed + 2000 + idx * 2 + 1,
+            )
+
+        if dead_time_s > 0.0:
+            tags_a = apply_dead_time(tags_a, dead_time_s)
+            tags_b = apply_dead_time(tags_b, dead_time_s)
 
         result = match_coincidences(tags_a, tags_b, tau_seconds=tau_s)
         obs = compute_observables(
@@ -1591,6 +1632,10 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
             "background_rate_hz": args.background_rate_hz,
             "jitter_ps": args.jitter_ps,
             "tau_ps": args.tau_ps,
+            "dead_time_ps": args.dead_time_ps,
+            "afterpulse_prob": args.afterpulse_prob,
+            "afterpulse_window_ps": args.afterpulse_window_ps,
+            "afterpulse_decay_ps": args.afterpulse_decay_ps,
             "seed": args.seed,
         },
         "records": records,
