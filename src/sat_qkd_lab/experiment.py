@@ -205,6 +205,7 @@ def run_experiment(
     finite_key: Optional[FiniteKeyParams],
     bell_mode: bool = False,
     unblind: bool = False,
+    sync_params_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run blinded experiment and write outputs to disk."""
     rng = random.Random(params.seed)
@@ -311,6 +312,7 @@ def run_experiment(
             "pass_seconds": params.pass_seconds,
             "metrics": metrics,
             "bell_mode": bool(bell_mode),
+            "sync_params": sync_params_path,
             "finite_key": {
                 "enabled": finite_key is not None,
                 "epsilon_sec": finite_key.eps_sec if finite_key is not None else None,
