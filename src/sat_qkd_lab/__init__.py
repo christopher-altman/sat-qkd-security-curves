@@ -23,6 +23,7 @@ __all__ = [
     "telemetry",
     "calibration_fit",
     "dashboard",
+    "timing",
 ]
 
 from . import free_space_link  # makes sat_qkd_lab.free_space_link available

@@ -8,12 +8,12 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 import json
 
-from .detector import DetectorParams, DEFAULT_DETECTOR
-from .sweep import sweep_loss
-from .plotting import plot_key_metrics_vs_loss, plot_key_rate_vs_elevation, plot_secure_window
-from .pass_model import PassModelParams, compute_pass_records
-from .experiment import ExperimentParams, run_experiment
-from .forecast_harness import run_forecast_harness
+from sat_qkd_lab.detector import DetectorParams, DEFAULT_DETECTOR
+from sat_qkd_lab.sweep import sweep_loss
+from sat_qkd_lab.plotting import plot_key_metrics_vs_loss, plot_key_rate_vs_elevation, plot_secure_window
+from sat_qkd_lab.pass_model import PassModelParams, compute_pass_records
+from sat_qkd_lab.experiment import ExperimentParams, run_experiment
+from sat_qkd_lab.forecast_harness import run_forecast_harness
 
 
 def _ensure_outdir(path: str) -> Path:
@@ -57,14 +57,14 @@ def run() -> None:
 
     with tab_sweep:
         st.subheader("BB84 Sweep")
-        loss_min = st.number_input("Loss min (dB)", value=20.0)
-        loss_max = st.number_input("Loss max (dB)", value=60.0)
-        steps = st.number_input("Steps", value=21, step=1)
-        flip_prob = st.number_input("Flip probability", value=0.005)
-        pulses = st.number_input("Pulses", value=200000, step=1000)
-        seed = st.number_input("Seed", value=0, step=1)
-        eta = st.number_input("Detector efficiency", value=float(DEFAULT_DETECTOR.eta))
-        p_bg = st.number_input("Background probability", value=float(DEFAULT_DETECTOR.p_bg))
+        loss_min = st.number_input("Loss min (dB)", value=20.0, key="sweep_loss_min")
+        loss_max = st.number_input("Loss max (dB)", value=60.0, key="sweep_loss_max")
+        steps = st.number_input("Steps", value=21, step=1, key="sweep_steps")
+        flip_prob = st.number_input("Flip probability", value=0.005, key="sweep_flip_prob")
+        pulses = st.number_input("Pulses", value=200000, step=1000, key="sweep_pulses")
+        seed = st.number_input("Seed", value=0, step=1, key="sweep_seed")
+        eta = st.number_input("Detector efficiency", value=float(DEFAULT_DETECTOR.eta), key="sweep_eta")
+        p_bg = st.number_input("Background probability", value=float(DEFAULT_DETECTOR.p_bg), key="sweep_p_bg")
 
         if st.button("Run sweep"):
             det = DetectorParams(eta=float(eta), p_bg=float(p_bg))
@@ -90,11 +90,11 @@ def run() -> None:
 
     with tab_pass:
         st.subheader("Pass Sweep")
-        max_elevation = st.number_input("Max elevation (deg)", value=60.0)
-        min_elevation = st.number_input("Min elevation (deg)", value=10.0)
-        pass_seconds = st.number_input("Pass seconds", value=300.0)
-        dt_seconds = st.number_input("Time step (s)", value=5.0)
-        rep_rate = st.number_input("Rep rate (Hz)", value=1e8)
+        max_elevation = st.number_input("Max elevation (deg)", value=60.0, key="pass_max_elev")
+        min_elevation = st.number_input("Min elevation (deg)", value=10.0, key="pass_min_elev")
+        pass_seconds = st.number_input("Pass seconds", value=300.0, key="pass_seconds")
+        dt_seconds = st.number_input("Time step (s)", value=5.0, key="pass_dt")
+        rep_rate = st.number_input("Rep rate (Hz)", value=1e8, key="pass_rep_rate")
 
         if st.button("Run pass sweep"):
             params = PassModelParams(
@@ -126,11 +126,11 @@ def run() -> None:
 
     with tab_experiment:
         st.subheader("Blinded Experiment")
-        n_blocks = st.number_input("Blocks", value=20, step=1)
-        block_seconds = st.number_input("Block seconds", value=30.0)
-        rep_rate_hz = st.number_input("Rep rate (Hz)", value=1e8)
-        seed = st.number_input("Seed", value=0, step=1)
-        unblind = st.checkbox("Unblind (explicit)", value=False)
+        n_blocks = st.number_input("Blocks", value=20, step=1, key="exp_n_blocks")
+        block_seconds = st.number_input("Block seconds", value=30.0, key="exp_block_seconds")
+        rep_rate_hz = st.number_input("Rep rate (Hz)", value=1e8, key="exp_rep_rate")
+        seed = st.number_input("Seed", value=0, step=1, key="exp_seed")
+        unblind = st.checkbox("Unblind (explicit)", value=False, key="exp_unblind")
 
         if st.button("Run experiment"):
             params = ExperimentParams(
@@ -146,12 +146,12 @@ def run() -> None:
 
     with tab_forecast:
         st.subheader("Forecast Scoring")
-        forecasts_path = st.text_input("Forecasts path", value="forecasts.json")
-        n_blocks = st.number_input("Blocks ", value=20, step=1)
-        block_seconds = st.number_input("Block seconds ", value=30.0)
-        rep_rate_hz = st.number_input("Rep rate (Hz) ", value=1e8)
-        seed = st.number_input("Seed ", value=0, step=1)
-        unblind = st.checkbox("Unblind forecast output", value=False)
+        forecasts_path = st.text_input("Forecasts path", value="forecasts.json", key="forecast_path")
+        n_blocks = st.number_input("Blocks ", value=20, step=1, key="forecast_n_blocks")
+        block_seconds = st.number_input("Block seconds ", value=30.0, key="forecast_block_seconds")
+        rep_rate_hz = st.number_input("Rep rate (Hz) ", value=1e8, key="forecast_rep_rate")
+        seed = st.number_input("Seed ", value=0, step=1, key="forecast_seed")
+        unblind = st.checkbox("Unblind forecast output", value=False, key="forecast_unblind")
 
         if st.button("Run forecast"):
             output = run_forecast_harness(
