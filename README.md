@@ -2,7 +2,7 @@
 
 # Satellite Quantum Key Distribution Security Curves
 
-*Quantum keys don’t fail quietly—loss and noise can leave you with bits, but no secrecy. We model the cliff to surface silent breakage before it becomes a system risk.*
+*Quantum keys don't fail quietly—loss and noise can leave you with bits, but no secrecy. We model the cliff to surface silent breakage before it becomes a system risk.*
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -63,49 +63,49 @@ Quick run examples:
 ├── pyproject.toml
 ├── README.md
 ├── src
-│   ├── main.py
-│   └── sat_qkd_lab
-│       ├── __init__.py
-│       ├── attacks.py
-│       ├── background_process.py
-│       ├── basis_bias.py
-│       ├── bb84.py
-│       ├── calibration_fit.py
-│       ├── calibration.py
-│       ├── change_points.py
-│       ├── clock_sync.py
-│       ├── coincidence.py
-│       ├── constellation.py
-│       ├── dashboard.py
-│       ├── decoy_bb84.py
-│       ├── detector.py
-│       ├── eb_observables.py
-│       ├── eb_qkd.py
-│       ├── event_stream.py
-│       ├── experiment.py
-│       ├── fading_samples.py
-│       ├── fim_identifiability.py
-│       ├── finite_key.py
-│       ├── forecast_harness.py
-│       ├── forecast.py
-│       ├── free_space_link.py
-│       ├── helpers.py
-│       ├── hil_adapters.py
-│       ├── link_budget.py
-│       ├── optical_link.py
-│       ├── optics.py
-│       ├── ou_fading.py
-│       ├── pass_model.py
-│       ├── plotting.py
-│       ├── pointing.py
-│       ├── polarization_drift.py
-│       ├── run.py
-│       ├── scoring.py
-│       ├── sweep.py
-│       ├── telemetry.py
-│       ├── timetags.py
-│       ├── timing.py
-│       └── windows.py
+│   ├── main.py
+│   └── sat_qkd_lab
+│       ├── __init__.py
+│       ├── attacks.py
+│       ├── background_process.py
+│       ├── basis_bias.py
+│       ├── bb84.py
+│       ├── calibration_fit.py
+│       ├── calibration.py
+│       ├── change_points.py
+│       ├── clock_sync.py
+│       ├── coincidence.py
+│       ├── constellation.py
+│       ├── dashboard.py
+│       ├── decoy_bb84.py
+│       ├── detector.py
+│       ├── eb_observables.py
+│       ├── eb_qkd.py
+│       ├── event_stream.py
+│       ├── experiment.py
+│       ├── fading_samples.py
+│       ├── fim_identifiability.py
+│       ├── finite_key.py
+│       ├── forecast_harness.py
+│       ├── forecast.py
+│       ├── free_space_link.py
+│       ├── helpers.py
+│       ├── hil_adapters.py
+│       ├── link_budget.py
+│       ├── optical_link.py
+│       ├── optics.py
+│       ├── ou_fading.py
+│       ├── pass_model.py
+│       ├── plotting.py
+│       ├── pointing.py
+│       ├── polarization_drift.py
+│       ├── run.py
+│       ├── scoring.py
+│       ├── sweep.py
+│       ├── telemetry.py
+│       ├── timetags.py
+│       ├── timing.py
+│       └── windows.py
 └── tests
     ├── conftest.py
     ├── test_adversary_system_realism.py
@@ -163,7 +163,11 @@ Quick run examples:
 
 ## Problem
 
-Satellite and fibre Quantum Key Distribution (QKD) systems live or die on a simple fact: bits can still flow while secrecy collapses. This experiment creates a reproducible “security curve” lab: simulate realistic loss/noise, models that security cliff and makes it visible before it becomes a system risk.
+Satellite and fibre Quantum Key Distribution (QKD) systems live or die on a simple fact: bits can still flow while secrecy collapses. This experiment creates a reproducible "security curve" lab: simulate realistic loss/noise, models that security cliff and makes it visible before it becomes a system risk.
+
+## Hypothesis
+
+If we model (i) channel loss in dB, (ii) intrinsic measurement noise, and (iii) a simple active attack, we should see a sharp operational threshold: QBER rises past a regime where privacy amplification can no longer extract a secret key, even if classical throughput remains nonzero.
 
 ## Thesis
 
@@ -175,18 +179,169 @@ Transmittance `η` is the probability a photon survives the channel and reaches 
 QBER `e` is the bit error rate after sifting, so it captures the net disturbance of the link.  
 Binary entropy `h(e)` expresses uncertainty per bit (0 to 1), and it rises quickly with noise.  
 For BB84, the asymptotic secret fraction decreases as `e` grows and vanishes as `e → 0.5`.  
-That’s the security cliff: detections and sifted bits can remain nonzero while secrecy collapses.  
+That's the security cliff: detections and sifted bits can remain nonzero while secrecy collapses.  
 
 Realism primitives (units explicit): timing jitter σ is typically 10–200 ps for SPDs and stored in seconds in code/JSON; coincidence window τc is sub‑ns and stored in seconds; fading variance Var(T) captures heavy‑tailed, time‑correlated free‑space optics where rare deep fades dominate.  
 
+## Method
+
+- **Where training signal comes from:** Monte Carlo simulation of BB84 prepare-and-measure, basis sifting, parameter estimation, and secret-fraction calculation.
+- **Why this architecture/data was chosen:** BB84 is the canonical QKD protocol; intercept–resend is the simplest attack with a visible QBER signature; dB loss is the lingua franca of link budgets (fibre and free-space).
+- **What is being experimentally compared:**
+  - no attack vs intercept–resend
+  - sweeps over `loss_db` and intrinsic `flip_prob`
+  - optional "satellite pass" mapping elevation angle → `loss_db`
+
 ## Approach
 
-- Abort headroom is `qber_abort − qber_mean`, the distance to the protocol’s error threshold, with headroom treated as absolute QBER (e.g., 0.05 means a 5% margin to an 11% abort threshold).  
+- Abort headroom is `qber_abort − qber_mean`, the distance to the protocol's error threshold, with headroom treated as absolute QBER (e.g., 0.05 means a 5% margin to an 11% abort threshold).  
 - CAR (coincidence‑to‑accidental ratio) is a signal‑quality witness in entanglement‑based QKD.  
 - Elevation profiles map to time‑varying loss and background during pass sweeps.  
 - Finite‑key penalties cap what can be claimed with limited samples, even when averages look good.  
 - Expected‑value sweeps, pass‑sweep time series, and the experiment/forecast harnesses are tied together under a single operational discipline.  
 - Topics: qml, quantum-ml, verification, cryptography, robustness, quantum-cryptography, qkd, bb84, satellite, security, noise-analysis, infosec, network-security, simulation.  
+
+## Implementation
+
+- Python package under `/src/sat_qkd_lab`
+- CLI: `./py -m sat_qkd_lab.run <command> --help`
+- Requirements: `pyproject.toml` (numpy, matplotlib)
+
+### Features
+
+**Detector/Background Model** — The simulation includes a realistic detector model with:
+- `eta`: Detection efficiency (default 0.2)
+- `p_bg`: Background/dark click probability per pulse (default 1e-4)
+
+At high channel loss, background clicks dominate over signal clicks, causing QBER to approach 0.5. This models the operationally critical effect where the signal-to-noise ratio degrades.
+
+**Monte Carlo Confidence Intervals** — Run multiple trials per loss value to obtain uncertainty estimates:
+- `--trials N`: Number of independent trials (enables CI when N > 1)
+- `--workers N`: Parallel workers for faster execution
+- `--seed N`: Base random seed for reproducibility
+
+Outputs include mean, standard deviation, and 95% CI bounds for QBER, secret fraction, and key rate per pulse. CI bounds are clamped to physical ranges (e.g., QBER ≤ 0.5, key rate ≥ 0).
+
+**Key Rate Per Pulse** — The simulation outputs `key_rate_per_pulse`, which properly accounts for the BB84 sifting factor (~1/2). This gives the asymptotic key rate normalized to sent pulses:
+```
+key_rate_per_pulse = (n_sifted / n_sent) × secret_fraction
+```
+
+**Decoy-State BB84** — The `decoy-sweep` command implements vacuum + weak decoy protocol:
+- Uses three intensities (signal, decoy, vacuum) to bound single-photon contributions
+- Computes asymptotic key rate using standard decoy-state bounds
+- Demonstrates PNS attack resilience (motivation for real satellite QKD)
+
+References:
+- Lim et al., "Concise security bounds for practical decoy-state QKD" (PRA 2014)
+
+**Input Validation** — CLI arguments are validated post-parse with clear error messages:
+- `validate_int(name, value, min_value, max_value)` — Integer bounds checking
+- `validate_float(name, value, min_value, max_value, allow_nan, allow_inf)` — Float bounds with NaN/inf control
+- `validate_seed(seed)` — Ensures seed is None or non-negative integer
+
+Invalid inputs raise `ValueError` with the parameter name and invalid value.
+
+**Abort Handling** — When QBER exceeds the abort threshold (default 11%), the protocol aborts and:
+- `secret_fraction` is set to 0.0 (no key extractable)
+- `n_secret_est` is set to 0
+- `key_rate_per_pulse` returns 0.0
+
+This ensures aborted trials contribute zero to aggregated statistics.
+
+**Link Budget** — The `link_budget.py` module is an **Option A scenario generator** that maps elevation angles to loss values for demonstration. It is *not* a physically accurate optical link model. See `optical_link.py` for documentation of what a proper Option B model would require.
+
+**Finite-Key Analysis** — The `--finite-key` flag enables finite-size security analysis using Hoeffding-type concentration bounds. This computes conservative secret key length estimates that account for statistical uncertainty in parameter estimation and explicit ε-budgeting:
+
+- `--eps-pe`: Parameter estimation failure probability (default 1e-10)
+- `--eps-sec`: Secrecy failure probability (default 1e-10)
+- `--eps-cor`: Correctness failure probability (default 1e-15)
+- `--ec-efficiency`: Error correction efficiency factor (default 1.16)
+- `--f-ec`: Alias for `--ec-efficiency`
+- `--pe-frac`: Fraction of sifted bits used for parameter estimation (default 0.5)
+- `--m-pe`: Explicit parameter estimation sample size (overrides `--pe-frac`)
+- `--n-sent`: Total pulses sent (overrides `--pulses` when set)
+- `--rep-rate` + `--pass-seconds`: Alternative pulse accounting, with `n_sent = rep_rate * pass_seconds`
+
+The finite-key rate is always ≤ the asymptotic rate, with the penalty decreasing as block size increases. The analysis uses:
+- Hoeffding bounds for QBER estimation uncertainty
+- Explicit error-correction leakage and ε-penalty terms
+- Total security parameter: `eps_total = eps_pe + eps_sec + eps_cor`
+
+**Finite-key math (toy-but-recognizable BB84 bound):**
+
+```
+h2(q) = -q*log2(q) - (1-q)*log2(1-q), with q clamped into [1e-12, 1-1e-12]
+delta = sqrt( ln(1/eps_pe) / (2*m_pe) )
+qber_upper = min(0.5, q_hat + delta)
+
+leak_ec_bits = f_ec * n_sifted * h2(qber_upper)
+delta_eps_bits = 2*log2(2/eps_sec) + log2(2/eps_cor)
+ell_bits = n_sifted * max(0, 1 - 2*h2(qber_upper)) - leak_ec_bits - delta_eps_bits
+key_rate_per_pulse_finite = ell_bits / n_sent
+```
+
+References:
+- Tomamichel et al., "Tight finite-key analysis for quantum cryptography" (Nature Comm. 2012)
+- Lim et al., "Concise security bounds for practical decoy-state QKD" (PRA 2014)
+
+**Free-Space Optical Link Model** — The `pass-sweep` command provides a physically-grounded free-space link budget for satellite-to-ground QKD:
+
+- **Diffraction/Coupling Model**: Gaussian beam propagation with diffraction-limited divergence (`θ = 1.22λ/D`) and receiver aperture coupling efficiency
+- **Pointing Error/Jitter**: Rayleigh-distributed angular error with configurable `--sigma-point` (default 2 µrad)
+- **Atmospheric Extinction**: Kasten-Young airmass formula with zenith loss scaling by elevation
+- **Turbulence/Scintillation**: Lognormal fading model (`--turbulence` flag, `--sigma-ln` parameter)
+- **Day/Night Background**: `--day` flag increases background noise by `--day-bg-factor` (default 100×)
+
+```bash
+# Night-time pass simulation (default)
+./py -m sat_qkd_lab.run pass-sweep --max-elevation 70 --pass-duration 300
+
+# Day-time pass with turbulence
+./py -m sat_qkd_lab.run pass-sweep --day --turbulence --sigma-ln 0.3
+
+# Custom optical parameters
+./py -m sat_qkd_lab.run pass-sweep --tx-diameter 0.15 --rx-diameter 0.5 --altitude 600e3
+```
+
+References:
+- Liao et al., "Satellite-to-ground quantum key distribution" (Nature 2017)
+- Bourgoin et al., "Free-space QKD to a moving receiver" (NJP 2013)
+
+### Simulator API
+
+The core simulation functions are:
+- `sat_qkd_lab.bb84.simulate_bb84()` — Single-photon BB84 Monte Carlo simulation
+- `sat_qkd_lab.decoy_bb84.simulate_decoy_bb84()` — Decoy-state BB84 with vacuum + weak decoy
+- `sat_qkd_lab.free_space_link.total_link_loss_db()` — Free-space link loss from elevation angle
+- `sat_qkd_lab.sweep.sweep_pass()` — Satellite pass simulation with free-space link model
+
+Both return structured results with QBER, secret fraction, and key rate metrics.
+
+### Example Commands
+
+```bash
+# Single-trial BB84 sweep (fast)
+./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21
+
+# BB84 sweep with detector model and CI (10 trials per point)
+./py -m sat_qkd_lab.run sweep --trials 10 --eta 0.2 --p-bg 1e-4
+
+# Decoy-state BB84 sweep
+./py -m sat_qkd_lab.run decoy-sweep --loss-min 20 --loss-max 50 --steps 16
+
+# Finite-key analysis sweep
+./py -m sat_qkd_lab.run sweep --finite-key --pulses 500000 --eps-pe 1e-10 --eps-sec 1e-10
+
+# Finite-key rate vs total pulses (uses representative loss point)
+./py -m sat_qkd_lab.run sweep --finite-key --rep-rate 1e7 --pass-seconds 30
+
+# Free-space satellite pass sweep (night-time)
+./py -m sat_qkd_lab.run pass-sweep --max-elevation 60 --pass-duration 300
+
+# Free-space pass with turbulence and day-time background
+./py -m sat_qkd_lab.run pass-sweep --day --turbulence --sigma-ln 0.3
+```
 
 ## Capabilities
 
@@ -199,33 +354,6 @@ Realism primitives (units explicit): timing jitter σ is typically 10–200 ps f
 - **Dashboard:** install with `./py -m pip install -e ".[dashboard]"` and launch via `./py -m sat_qkd_lab.dashboard` (blinded by default).
 - **Outputs (selected, present in this checkout):** `reports/latest.json`, `reports/latest_pass.json`, `reports/latest_experiment.json`, `reports/latest_coincidence.json`, `reports/schedule_blinded.json`; figures include `figures/key_qber_vs_loss.png`, `figures/key_fraction_vs_loss.png`, `figures/qber_vs_loss_ci.png`, `figures/secret_fraction_vs_loss_ci.png`, `figures/qber_headroom_vs_loss.png`, `figures/key_rate_vs_elevation.png`, `figures/secure_window_per_pass.png`, `figures/loss_vs_elevation.png`, `figures/car_vs_loss.png`, `figures/chsh_s_vs_loss.png`, `figures/visibility_vs_loss.png`.
 - **JSON outputs (schema + stability):** outputs are append‑only, require explicit units where applicable, and blinded outputs contain no labels unless `--unblind`.
-- **Detector/background defaults (explicit):** the baseline detector model uses detection efficiency `eta = 0.2` and background/dark click probability `p_bg = 1e-4` *per pulse*. At high loss, background clicks dominate and QBER rises.
-- **Key-rate normalization (`key_rate_per_pulse`):** report the asymptotic rate normalized to *sent* pulses (sifting included via `n_sifted / n_sent`, typically ≈ 1/2):
-  ```
-  key_rate_per_pulse = (n_sifted / n_sent) × secret_fraction
-  ```
-- **Input validation helpers (post-parse):**
-  - `validate_int(name, value, min_value, max_value)` — integer bounds checking
-  - `validate_float(name, value, min_value, max_value, allow_nan, allow_inf)` — float bounds with NaN/inf control
-  - `validate_seed(seed)` — ensures seed is `None` or a non-negative integer  
-  Invalid inputs raise `ValueError` with the parameter name and invalid value.
-- **Abort handling (Monte Carlo aggregation semantics):** when QBER exceeds the abort threshold (default 11%), the protocol aborts and:
-  - `secret_fraction = 0.0` (no key extractable)
-  - `n_secret_est = 0`
-  - `key_rate_per_pulse = 0.0`  
-  This ensures aborted trials contribute zero to aggregated statistics.
-- **Finite-key math (toy-but-recognizable BB84 bound):** when finite-key mode is enabled, the analysis accounts for parameter-estimation uncertainty (Hoeffding-type), explicit ε-budgeting, and finite-size penalties:
-  ```
-  h2(q) = -q*log2(q) - (1-q)*log2(1-q), with q clamped into [1e-12, 1-1e-12]
-  delta = sqrt( ln(1/eps_pe) / (2*m_pe) )
-  qber_upper = min(0.5, q_hat + delta)
-
-  leak_ec_bits = f_ec * n_sifted * h2(qber_upper)
-  delta_eps_bits = 2*log2(2/eps_sec) + log2(2/eps_cor)
-  ell_bits = n_sifted * max(0, 1 - 2*h2(qber_upper)) - leak_ec_bits - delta_eps_bits
-  key_rate_per_pulse_finite = ell_bits / n_sent
-  ```
-
   ```json
   {
     "schema_version": "0.4",
@@ -236,6 +364,93 @@ Realism primitives (units explicit): timing jitter σ is typically 10–200 ps f
   ```
 - **CI bounds:** CI lower bounds are clamped to 0; QBER CI upper bounds are clamped to 0.5.  
 - Artifacts & provenance: each development prompt writes `docs/report-P{N}-...` and `docs/diff-P{N}-...` with a verbatim `ls -l docs` gating proof.
+
+## Results
+
+The model generates:
+
+- `figures/key_qber_vs_loss.png` — QBER vs channel loss
+- `figures/key_fraction_vs_loss.png` — Secret fraction vs channel loss (legacy alias: `key_key_fraction_vs_loss.png`)
+- `figures/qber_vs_loss_ci.png` — QBER with 95% CI bands (when `--trials > 1`)
+- `figures/secret_fraction_vs_loss_ci.png` — Secret fraction with 95% CI (legacy alias: `key_rate_vs_loss_ci.png`)
+- `figures/decoy_key_rate_vs_loss.png` — Decoy-state key rate vs loss
+- `figures/finite_key_comparison.png` — Asymptotic vs finite-key rate (when `--finite-key`)
+- `figures/finite_key_bits_vs_loss.png` — Extractable secret bits vs loss (when `--finite-key`)
+- `figures/finite_size_penalty.png` — Finite-size penalty factor vs loss (when `--finite-key`)
+- `figures/finite_key_rate_vs_n_sent.png` — Finite-key rate vs total pulses (when `--finite-key`)
+- `figures/key_rate_vs_elevation.png` — Key rate vs elevation angle (when `pass-sweep`)
+- `figures/secure_window_per_pass.png` — Secure window timing over pass (when `pass-sweep`)
+- `figures/loss_vs_elevation.png` — Total link loss vs elevation (when `pass-sweep`)
+- `reports/latest.json` — Raw sweep metrics with schema version and timestamp
+
+**Figure 1. Estimated secret-key rate versus channel loss for BB84.** ([↑ featured figure](#featured-figure))  
+A Monte-Carlo sweep shows that link loss alone reduces detections but does not destroy secrecy until error rates dominate. Under an intercept–resend attack, the secret-key fraction collapses to zero at moderate loss even while sifted bits remain non-zero, revealing the security cliff where privacy amplification can no longer extract secrecy.
+
+**Figure 2. Quantum Bit Error Rate (QBER) versus channel loss for BB84.** ([↑ featured figure](#featured-figure))  
+Without attack, intrinsic measurement noise keeps QBER low across loss. An intercept–resend adversary injects a strong QBER signature, driving errors beyond the tolerable entropy budget. The plotted spikes illustrate the detectable breakage regime that classical throughput monitors would miss without explicit QBER estimation.
+
+### JSON Output Schema (v0.4)
+
+The output JSON includes these fields for CI sweeps:
+
+```json
+{
+  "schema_version": "0.4",
+  "generated_utc": "2026-01-02T00:00:00Z",
+  "loss_sweep_ci": {
+    "no_attack": [{
+      "qber_mean": 0.025,
+      "qber_ci_low": 0.018,
+      "qber_ci_high": 0.032,
+      "secret_fraction_mean": 0.85,
+      "secret_fraction_ci_low": 0.80,
+      "secret_fraction_ci_high": 0.90,
+      "key_rate_per_pulse_mean": 0.0012,
+      "key_rate_per_pulse_ci_low": 0.0010,
+      "key_rate_per_pulse_ci_high": 0.0014,
+      "abort_rate": 0.0
+    }]
+  }
+}
+```
+
+For finite-key sweeps (`--finite-key`), the JSON includes additional fields:
+
+```json
+{
+  "schema_version": "0.4",
+  "finite_key_sweep": {
+    "no_attack": [{
+      "loss_db": 25.0,
+      "qber": 0.025,
+      "qber_hat": 0.025,
+      "qber_upper": 0.032,
+      "ell_bits": 45000.0,
+      "key_rate_per_pulse_asymptotic": 0.0012,
+      "key_rate_per_pulse_finite": 0.0009,
+      "finite_size_penalty": 0.25,
+      "eps_total": 2.00001e-10,
+      "f_ec": 1.16,
+      "delta_eps_bits": 150.0
+    }]
+  },
+  "parameters": {
+    "finite_key": true,
+    "eps_pe": 1e-10,
+    "eps_sec": 1e-10,
+    "eps_cor": 1e-15,
+    "ec_efficiency": 1.16,
+    "pe_frac": 0.5,
+    "m_pe": null
+  }
+}
+```
+
+All CI lower bounds are clamped to 0; QBER CI upper is clamped to 0.5.
+
+## Interpretation
+
+The curves show an engineering-facing "security budget." Loss reduces detections (sifted key), while noise and attacks raise QBER. Once QBER rises enough, the secret fraction collapses to zero: you can still exchange bits, but you cannot distill secrecy. This makes the QKD security story measurable and testable, rather than rhetorical.
 
 ## Why it matters
 
@@ -249,7 +464,7 @@ Operators need to see where secrecy collapses long before it fails in the field.
 
 1. Bennett, C. H., & Brassard, G. (1984). [Quantum cryptography: Public key distribution and coin tossing.](https://www.sciencedirect.com/science/article/pii/S0304397514004241) *Proceedings of the IEEE International Conference on Computers, Systems and Signal Processing* (Bangalore, India), 175–179.
 
-2. Ekert, A. K. (1991). [Quantum cryptography based on Bell’s theorem.](https://doi.org/10.1103/PhysRevLett.67.661) *Physical Review Letters*, *67*(6), 661–663. 
+2. Ekert, A. K. (1991). [Quantum cryptography based on Bell's theorem.](https://doi.org/10.1103/PhysRevLett.67.661) *Physical Review Letters*, *67*(6), 661–663. 
 
 3. Shor, P. W., & Preskill, J. (2000). [Simple proof of security of the BB84 quantum key distribution protocol.](https://doi.org/10.1103/PhysRevLett.85.441) *Physical Review Letters*, *85*, 441–444. 
 
@@ -259,12 +474,13 @@ Operators need to see where secrecy collapses long before it fails in the field.
 
 6. Altman, C., Williams, C., Ursin, R., Villoresi, P., Sharma, V. [Astronaut Development and Deployment of a Secure Space Communications Network.](https://drive.google.com/file/d/0B99KWApna6GoX3JzZGMzbzNrMjg/view?resourcekey=0-b1lf7VUq8QmpRriVN5N2sw) NASA NIAC/OCT; DARPA QUINESS (Macroscopic Quantum Communications). 
 
-7. Tomamichel *et al*., [Tight finite-key analysis for quantum cryptography](https://www.nature.com/articles/ncomms1631) (Nature Comm. 2012).
+7. Tomamichel, M., Lim, C. C. W., Gisin, N., & Renner, R. (2012). [Tight finite-key analysis for quantum cryptography.](https://doi.org/10.1038/ncomms1631) *Nature Communications*, *3*, 634.
 
-8. Lim *et al*., [Concise security bounds for practical decoy-state QKD](https://arxiv.org/abs/1311.7129) (PRA 2014).
+8. Lim, C. C. W., Curty, M., Walenta, N., Xu, F., & Zbinden, H. (2014). [Concise security bounds for practical decoy-state quantum key distribution.](https://doi.org/10.1103/PhysRevA.89.022307) *Physical Review A*, *89*, 022307.
 
-9. Bourgoin *et al*., [Free-space QKD to a moving receiver](https://arxiv.org/abs/1505.00292)  (NJP 2013).
+9. Liao, S.-K., et al. (2017). [Satellite-to-ground quantum key distribution.](https://doi.org/10.1038/nature23655) *Nature*, *549*, 43–47.
 
+10. Bourgoin, J.-P., et al. (2013). [A comprehensive design and performance analysis of low Earth orbit satellite quantum communication.](https://doi.org/10.1088/1367-2630/15/2/023006) *New Journal of Physics*, *15*, 023006.
 
 ## Citations
 
