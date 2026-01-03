@@ -56,6 +56,7 @@ from .plotting import (
     plot_calibration_quality_card,
     plot_calibration_residuals,
     plot_polarization_drift_vs_time,
+    plot_compensation_residuals,
     plot_pol_rotation_vs_elevation,
 )
 from .free_space_link import FreeSpaceLinkParams, generate_elevation_profile
@@ -1947,6 +1948,43 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
             str(outdir / "figures" / "polarization_drift_vs_time.png"),
         )
         print("Plot:", drift_plot_path)
+        if args.pol_drift and args.pol_compensate and polarization_angle is not None:
+            residual_deg = np.rad2deg(polarization_angle)
+            resid_plot_path = plot_compensation_residuals(
+                np.array(time_s, dtype=float),
+                residual_deg,
+                str(outdir / "figures" / "compensation_residuals.png"),
+            )
+            print("Plot:", resid_plot_path)
+        if args.pol_drift:
+            drift_report = {
+                "schema_version": "1.0",
+                "mode": "optics-drift",
+                "timestamp_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "inputs": {
+                    "sigma_deg": float(args.pol_drift_sigma_deg),
+                    "seed": int(args.pol_drift_seed),
+                    "compensate": bool(args.pol_compensate),
+                    "lag_seconds": float(args.pol_comp_lag_s) if args.pol_compensate else 0.0,
+                },
+                "time_series": {
+                    "t_seconds": [float(t) for t in time_s],
+                    "drift_deg": [float(v) for v in np.rad2deg(polarization_raw)],
+                },
+            }
+            if polarization_est is not None:
+                drift_report["time_series"]["estimate_deg"] = [
+                    float(v) for v in np.rad2deg(polarization_est)
+                ]
+            if polarization_angle is not None:
+                drift_report["time_series"]["residual_deg"] = [
+                    float(v) for v in np.rad2deg(polarization_angle)
+                ]
+            drift_report_path = outdir / "reports" / "latest_optics_drift.json"
+            with open(drift_report_path, "w") as f:
+                json.dump(drift_report, f, indent=2)
+                f.write("\n")
+            print("Wrote:", drift_report_path)
     if args.pol_rotation and rotation_rad is not None:
         rotation_plot_path = plot_pol_rotation_vs_elevation(
             np.array(elevation_deg, dtype=float),
