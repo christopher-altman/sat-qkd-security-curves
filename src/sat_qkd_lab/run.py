@@ -47,6 +47,7 @@ from .plotting import (
     plot_transmittance_with_pointing,
     plot_background_rate_vs_bandwidth,
     plot_clock_sync_diagnostics,
+    plot_sync_lock_state,
     plot_fading_evolution,
     plot_secure_window_fragmentation,
     plot_basis_bias_vs_elevation,
@@ -90,7 +91,14 @@ from .optics import OpticalParams, background_rate_hz, dark_count_rate_hz
 from .constellation import schedule_passes, simulate_inventory
 from .fading_samples import sample_fading_transmittance, plot_eta_samples
 from .hil_adapters import ingest_timetag_file, playback_pass, compute_validation_diffs
-from .clock_sync import generate_beacon_times, apply_clock_model, estimate_offset_drift
+from .clock_sync import (
+    generate_beacon_times,
+    apply_clock_model,
+    estimate_offset_drift,
+    load_sync_params,
+    SyncParams,
+    write_sync_params,
+)
 from .ou_fading import simulate_ou_transmittance, compute_outage_clusters
 from .basis_bias import BasisBiasParams, basis_bias_from_elevation, basis_probs_from_bias
 
@@ -489,6 +497,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Clock drift in ppm (linear over time)")
     cs.add_argument("--tdc-ps", type=float, default=0.0,
                     help="TDC resolution in picoseconds (0 = no quantization)")
+    cs.add_argument("--sync-params", type=str, default=None,
+                    help="Path to sync_params.json from clock-sync")
+    cs.add_argument("--allow-resync", action="store_true",
+                    help="Allow resync estimation during scoring")
     cs.add_argument("--estimate-offset", action="store_true",
                     help="Estimate clock offset via coincidence scan")
     cs.add_argument("--stream-mode", action="store_true",
@@ -2026,6 +2038,25 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
     afterpulse_decay_s = args.afterpulse_decay_ps * 1e-12
     tdc_seconds = args.tdc_ps * 1e-12
 
+    if args.estimate_offset and not args.allow_resync:
+        raise ValueError("Resync estimation disabled; pass --allow-resync to override.")
+
+    sync_locked = True
+    sync_source = "manual"
+    sync_params_path = None
+    sync_offset_s = float(args.clock_offset_s)
+    sync_drift_ppm = float(args.clock_drift_ppm)
+    if args.sync_params:
+        params = load_sync_params(args.sync_params)
+        sync_offset_s = params.offset_s
+        sync_drift_ppm = params.drift_ppm
+        sync_source = params.source or "beacon"
+        sync_params_path = args.sync_params
+
+    if args.estimate_offset and args.allow_resync:
+        sync_locked = False
+        sync_source = "resync"
+
     rng = np.random.default_rng(args.seed)
     records = []
 
@@ -2103,8 +2134,8 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
                 tags_b = apply_dead_time(tags_b, dead_time_s)
 
         timing_model = TimingModel(
-            delta_t=args.clock_offset_s,
-            drift_ppm=args.clock_drift_ppm,
+            delta_t=sync_offset_s,
+            drift_ppm=sync_drift_ppm,
             tdc_seconds=tdc_seconds,
             jitter_sigma_s=0.0,
         )
@@ -2155,6 +2186,12 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
         str(outdir / "figures" / "visibility_vs_loss.png"),
     )
     print("Plot:", vis_plot_path)
+    lock_plot_path = plot_sync_lock_state(
+        duration_s=float(args.duration),
+        locked=sync_locked,
+        out_path=str(outdir / "figures" / "sync_lock_state.png"),
+    )
+    print("Plot:", lock_plot_path)
 
     cars = [r["car"] for r in records if np.isfinite(r["car"])]
     summary = {
@@ -2185,6 +2222,8 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
             "clock_offset_s": args.clock_offset_s,
             "clock_drift_ppm": args.clock_drift_ppm,
             "tdc_ps": args.tdc_ps,
+            "sync_params": args.sync_params,
+            "allow_resync": bool(args.allow_resync),
             "estimate_offset": bool(args.estimate_offset),
             "stream_mode": bool(args.stream_mode),
             "gate_duty_cycle": args.gate_duty_cycle,
@@ -2193,9 +2232,15 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
         },
         "records": records,
         "summary": summary,
+        "sync": {
+            "locked": bool(sync_locked),
+            "source": sync_source,
+            "offset_s": float(sync_offset_s),
+            "drift_ppm": float(sync_drift_ppm),
+        },
         "timing_model": {
-            "delta_t": args.clock_offset_s,
-            "drift_ppm": args.clock_drift_ppm,
+            "delta_t": float(sync_offset_s),
+            "drift_ppm": float(sync_drift_ppm),
             "tdc_seconds": tdc_seconds,
             "estimated_clock_offset_s": records[-1]["estimated_clock_offset_s"] if args.estimate_offset else None,
         },
@@ -2216,8 +2261,11 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
             "car_plot": "figures/car_vs_loss.png",
             "chsh_plot": "figures/chsh_s_vs_loss.png",
             "visibility_plot": "figures/visibility_vs_loss.png",
+            "sync_lock_state": "figures/sync_lock_state.png",
         },
     }
+    if sync_params_path is not None:
+        report["sync"]["params_path"] = sync_params_path
 
     report_path = outdir / "reports" / "latest_coincidence.json"
     with open(report_path, "w") as f:
@@ -2441,6 +2489,16 @@ def _run_clock_sync(args: argparse.Namespace) -> None:
         out_path=str(outdir / "figures" / "clock_sync_diagnostics.png"),
     )
     print("Plot:", diag_path)
+    lock_plot_path = plot_sync_lock_state(
+        duration_s=float(args.duration_s),
+        locked=True,
+        out_path=str(outdir / "figures" / "sync_lock_state.png"),
+    )
+    print("Plot:", lock_plot_path)
+
+    sync_params = SyncParams(offset_s=sync.offset_s, drift_ppm=sync.drift_ppm, source="beacon")
+    sync_params_path = outdir / "reports" / "sync_params.json"
+    write_sync_params(str(sync_params_path), sync_params)
 
     n_pairs = int(max(1.0, args.pair_rate_hz * args.duration_s))
     tags_a, tags_b = generate_pair_time_tags(
@@ -2492,6 +2550,13 @@ def _run_clock_sync(args: argparse.Namespace) -> None:
             "drift_ppm": sync.drift_ppm,
             "residual_std_s": sync.residual_std_s,
         },
+        "sync": {
+            "locked": True,
+            "source": "beacon",
+            "offset_s": sync.offset_s,
+            "drift_ppm": sync.drift_ppm,
+            "params_path": str(sync_params_path.relative_to(outdir)),
+        },
         "pre_sync": {
             "coincidences": int(pre_sync.coincidences),
             "accidentals": int(pre_sync.accidentals),
@@ -2506,6 +2571,7 @@ def _run_clock_sync(args: argparse.Namespace) -> None:
         },
         "artifacts": {
             "clock_sync_diagnostics": "figures/clock_sync_diagnostics.png",
+            "sync_lock_state": "figures/sync_lock_state.png",
         },
     }
 
@@ -2514,6 +2580,7 @@ def _run_clock_sync(args: argparse.Namespace) -> None:
         json.dump(report, f, indent=2)
         f.write("\n")
     print("Wrote:", report_path)
+    print("Wrote:", sync_params_path)
 
 
 def _run_fading_ou(args: argparse.Namespace) -> None:
