@@ -304,6 +304,23 @@ def plot_secure_window_fragmentation(
     return out_path
 
 
+def plot_basis_bias_vs_elevation(
+    elevation_deg: Sequence[float],
+    bias_values: Sequence[float],
+    out_path: str,
+) -> str:
+    """Plot basis selection bias versus elevation."""
+    fig, ax = plt.subplots()
+    ax.plot(elevation_deg, bias_values, color="tab:red")
+    ax.set_xlabel("Elevation (deg)")
+    ax.set_ylabel("Basis bias (P(Z) - P(X))")
+    ax.set_title("Motion-induced basis bias vs elevation")
+    ax.axhline(0.0, color="gray", linewidth=0.8, linestyle="--")
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    return out_path
+
+
 # --- Decoy-State Plotting ---
 
 def plot_decoy_key_rate_vs_loss(
