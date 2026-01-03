@@ -361,6 +361,8 @@ def build_parser() -> argparse.ArgumentParser:
     fr.add_argument("--rep-rate-hz", type=float, default=1e8)
     fr.add_argument("--unblind", action="store_true",
                     help="Write unblinded forecast analysis output")
+    fr.add_argument("--estimate-identifiability", action="store_true",
+                    help="Estimate calibration identifiability and uncertainty")
 
     # --- calibration-fit command ---
     cf = sub.add_parser("calibration-fit", help="Fit detector parameters from telemetry.")
@@ -1780,6 +1782,7 @@ def _run_forecast_run(args: argparse.Namespace) -> None:
         block_seconds=args.block_seconds,
         rep_rate_hz=args.rep_rate_hz,
         unblind=args.unblind,
+        estimate_identifiability=args.estimate_identifiability,
     )
     print("Wrote:", outdir / "reports" / "forecast_blinded.json")
     if args.unblind:
