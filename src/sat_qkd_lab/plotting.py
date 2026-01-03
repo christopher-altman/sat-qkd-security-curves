@@ -865,6 +865,25 @@ def plot_transmittance_with_pointing(
     return out_path
 
 
+def plot_background_rate_vs_bandwidth(
+    bandwidth_nm: np.ndarray,
+    background_rate: np.ndarray,
+    out_path: str,
+) -> str:
+    """
+    Plot background rate vs filter bandwidth.
+    """
+    fig, ax = plt.subplots()
+    ax.plot(bandwidth_nm, background_rate, marker="o", markersize=3)
+    ax.set_xlabel("Filter bandwidth (nm)")
+    ax.set_ylabel("Background rate (Hz)")
+    ax.set_title("Background rate vs bandwidth")
+    ax.set_ylim(bottom=0)
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    return out_path
+
+
 def plot_decoy_comparison(
     records_bb84: Sequence[Dict[str, Any]],
     records_decoy: Sequence[Dict[str, Any]],

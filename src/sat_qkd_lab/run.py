@@ -43,6 +43,7 @@ from .plotting import (
     plot_secure_window_impact,
     plot_pointing_lock_state,
     plot_transmittance_with_pointing,
+    plot_background_rate_vs_bandwidth,
 )
 from .free_space_link import FreeSpaceLinkParams, generate_elevation_profile
 from .detector import DetectorParams, DEFAULT_DETECTOR
@@ -75,6 +76,7 @@ from .coincidence import match_coincidences
 from .eb_observables import compute_observables
 from .timing import TimingModel
 from .event_stream import StreamParams, generate_event_stream
+from .optics import OpticalParams, background_rate_hz, dark_count_rate_hz
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -317,6 +319,11 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Pointing jitter sigma in microradians")
     ps.add_argument("--pointing-seed", type=int, default=0,
                     help="Seed for pointing model")
+    # Optical chain parameters
+    ps.add_argument("--filter-bandwidth-nm", type=float, default=1.0,
+                    help="Optical filter bandwidth in nm")
+    ps.add_argument("--detector-temp-c", type=float, default=20.0,
+                    help="Detector temperature in C")
 
     # --- experiment-run command ---
     ex = sub.add_parser("experiment-run", help="Run blinded intervention A/B experiment harness.")
@@ -404,6 +411,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Gating duty cycle (0..1) for stream mode")
     cs.add_argument("--dead-time-ns", type=float, default=0.0,
                     help="Detector dead time in nanoseconds (stream mode)")
+    cs.add_argument("--filter-bandwidth-nm", type=float, default=1.0,
+                    help="Optical filter bandwidth in nm")
+    cs.add_argument("--detector-temp-c", type=float, default=20.0,
+                    help="Detector temperature in C")
     cs.add_argument("--seed", type=int, default=0)
     cs.add_argument("--outdir", type=str, default=".",
                     help="Output directory for figures/reports (default: .)")
@@ -560,6 +571,8 @@ def _validate_args(args: argparse.Namespace) -> None:
             validate_float("relock-seconds", args.relock_seconds, min_value=0.0)
             validate_float("pointing-jitter-urad", args.pointing_jitter_urad, min_value=0.0)
             validate_seed(args.pointing_seed)
+        validate_float("filter-bandwidth-nm", args.filter_bandwidth_nm, min_value=0.01)
+        validate_float("detector-temp-c", args.detector_temp_c, min_value=-80.0, max_value=80.0)
         time_s, _ = generate_elevation_profile(
             max_elevation_deg=args.max_elevation,
             min_elevation_deg=args.min_elevation,
@@ -617,6 +630,8 @@ def _validate_args(args: argparse.Namespace) -> None:
         validate_float("min-chsh-s", args.min_chsh_s, min_value=0.0)
         validate_float("gate-duty-cycle", args.gate_duty_cycle, min_value=0.0, max_value=1.0)
         validate_float("dead-time-ns", args.dead_time_ns, min_value=0.0)
+        validate_float("filter-bandwidth-nm", args.filter_bandwidth_nm, min_value=0.01)
+        validate_float("detector-temp-c", args.detector_temp_c, min_value=-80.0, max_value=80.0)
     elif args.cmd == "calibration-fit":
         if not Path(args.telemetry).exists():
             raise FileNotFoundError(f"Telemetry file not found: {args.telemetry}")
@@ -1355,7 +1370,14 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         day_background_factor=args.day_bg_factor,
     )
 
-    detector = DetectorParams(eta=args.eta, p_bg=args.p_bg)
+    optical_params = OpticalParams(
+        filter_bandwidth_nm=args.filter_bandwidth_nm,
+        detector_temp_c=args.detector_temp_c,
+        mode=background_mode,
+    )
+    p_bg_rate = background_rate_hz(optical_params, base_rate_hz=args.p_bg)
+    p_bg_rate = dark_count_rate_hz(optical_params, base_rate_hz=p_bg_rate)
+    detector = DetectorParams(eta=args.eta, p_bg=p_bg_rate)
     calibration = _load_calibration_model(args)
 
     outdir = Path(args.outdir)
@@ -1501,6 +1523,33 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
     )
     print("Plot:", loss_plot_path)
 
+    if args.filter_bandwidth_nm > 0:
+        bw_vals = np.linspace(0.5, max(0.5, args.filter_bandwidth_nm * 2.0), 10)
+        bg_vals = [
+            dark_count_rate_hz(
+                OpticalParams(
+                    filter_bandwidth_nm=float(bw),
+                    detector_temp_c=args.detector_temp_c,
+                    mode=background_mode,
+                ),
+                base_rate_hz=background_rate_hz(
+                    OpticalParams(
+                        filter_bandwidth_nm=float(bw),
+                        detector_temp_c=args.detector_temp_c,
+                        mode=background_mode,
+                    ),
+                    base_rate_hz=args.p_bg,
+                ),
+            )
+            for bw in bw_vals
+        ]
+        bg_plot_path = plot_background_rate_vs_bandwidth(
+            bw_vals,
+            np.array(bg_vals, dtype=float),
+            str(outdir / "figures" / "background_rate_vs_bandwidth.png"),
+        )
+        print("Plot:", bg_plot_path)
+
     if args.pointing:
         lock_plot_path = plot_pointing_lock_state(
             records_pass,
@@ -1533,6 +1582,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
             "rep_rate": args.rep_rate,
             "eta": args.eta,
             "p_bg": args.p_bg,
+            "p_bg_effective": p_bg_rate,
             "is_night": is_night,
             "turbulence": args.turbulence,
             "link_params": {
@@ -1574,6 +1624,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         assumptions.append("fading_model lognormal applied to transmittance samples")
     if args.pointing:
         assumptions.append("pointing_model applies acquisition/track/dropout transmittance multiplier")
+    assumptions.append("optical_chain scales background with filter bandwidth and temperature")
 
     plots = {
         "key_rate_vs_elevation": "figures/key_rate_vs_elevation.png",
@@ -1582,6 +1633,8 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
     if args.fading:
         plots["eta_fading_samples"] = "figures/eta_fading_samples.png"
         plots["secure_window_fading_impact"] = "figures/secure_window_fading_impact.png"
+    if args.filter_bandwidth_nm > 0:
+        plots["background_rate_vs_bandwidth"] = "figures/background_rate_vs_bandwidth.png"
     if args.pointing:
         plots["pointing_lock_state"] = "figures/pointing_lock_state.png"
         plots["transmittance_with_pointing"] = "figures/transmittance_with_pointing.png"
@@ -1606,6 +1659,11 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
                 "params": {
                     "mode": background_mode,
                 },
+            },
+            "optical_chain": {
+                "filter_bandwidth_nm": float(args.filter_bandwidth_nm),
+                "detector_temp_c": float(args.detector_temp_c),
+                "background_rate_used": float(p_bg_rate),
             },
             "finite_key": {
                 "enabled": bool(args.finite_key),
@@ -1724,6 +1782,14 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
     rng = np.random.default_rng(args.seed)
     records = []
 
+    optical_params = OpticalParams(
+        filter_bandwidth_nm=args.filter_bandwidth_nm,
+        detector_temp_c=args.detector_temp_c,
+        mode="night",
+    )
+    bg_rate_effective = background_rate_hz(optical_params, args.background_rate_hz)
+    bg_rate_effective = dark_count_rate_hz(optical_params, bg_rate_effective)
+
     for idx, loss_db in enumerate(loss_values):
         eta = 10 ** (-float(loss_db) / 10.0)
         expected_pairs = args.pair_rate_hz * args.duration * (eta ** 2)
@@ -1733,7 +1799,7 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
             stream_params = StreamParams(
                 duration_s=args.duration,
                 pair_rate_hz=args.pair_rate_hz * (eta ** 2),
-                background_rate_hz=args.background_rate_hz,
+                background_rate_hz=bg_rate_effective,
                 gate_duty_cycle=args.gate_duty_cycle,
                 dead_time_s=dead_time_stream_s,
                 afterpulse_prob=args.afterpulse_prob,
@@ -1755,13 +1821,13 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
                 seed=args.seed + idx,
             )
             bg_a = generate_background_time_tags(
-                rate_hz=args.background_rate_hz,
+                rate_hz=bg_rate_effective,
                 duration_s=args.duration,
                 sigma=sigma_s,
                 seed=args.seed + 1000 + idx * 2,
             )
             bg_b = generate_background_time_tags(
-                rate_hz=args.background_rate_hz,
+                rate_hz=bg_rate_effective,
                 duration_s=args.duration,
                 sigma=sigma_s,
                 seed=args.seed + 1000 + idx * 2 + 1,
@@ -1862,6 +1928,7 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
             "duration_seconds": args.duration,
             "pair_rate_hz": args.pair_rate_hz,
             "background_rate_hz": args.background_rate_hz,
+            "background_rate_used": bg_rate_effective,
             "jitter_ps": args.jitter_ps,
             "tau_ps": args.tau_ps,
             "dead_time_ps": args.dead_time_ps,
@@ -1884,6 +1951,11 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
             "drift_ppm": args.clock_drift_ppm,
             "tdc_seconds": tdc_seconds,
             "estimated_clock_offset_s": records[-1]["estimated_clock_offset_s"] if args.estimate_offset else None,
+        },
+        "optical_chain": {
+            "filter_bandwidth_nm": float(args.filter_bandwidth_nm),
+            "detector_temp_c": float(args.detector_temp_c),
+            "background_rate_used": float(bg_rate_effective),
         },
         "stream_model": {
             "enabled": bool(args.stream_mode),
