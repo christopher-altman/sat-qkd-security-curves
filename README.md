@@ -84,13 +84,18 @@ test -x .venv/bin/python || $PY -m venv .venv
 │  ├─ run.py
 │  ├─ plotting.py
 │  ├─ attacks.py
+│  ├─ calibration.py
+│  ├─ calibration_fit.py
+│  ├─ telemetry.py
 │  ├─ pass_model.py
 │  ├─ experiment.py
 │  ├─ forecast.py
 │  ├─ windows.py
 │  ├─ scoring.py
 │  ├─ eb_qkd.py
-│  └─ finite_key.py
+│  ├─ finite_key.py
+│  ├─ dashboard.py
+│  └─ ...
 ├─ tests/
 │  ├─ test_forecast_harness.py
 │  ├─ test_eb_pass_experiment.py
@@ -110,6 +115,7 @@ test -x .venv/bin/python || $PY -m venv .venv
    ├─ report-P10-MPI_FORECAST_HARNESS.md
    └─ diff-P10-MPI_FORECAST_HARNESS.md
 ```
+Notes: `docs/` contains local prompt artifacts and may be gitignored for archival only.
 
 ## Command map
 
@@ -118,7 +124,25 @@ test -x .venv/bin/python || $PY -m venv .venv
 ./py -m sat_qkd_lab.run pass-sweep --max-elevation 70 --pass-duration 300
 ./py -m sat_qkd_lab.run experiment-run --n-blocks 20 --block-seconds 30 --outdir .
 ./py -m sat_qkd_lab.run forecast-run --forecasts forecasts.json --outdir .
+./py -m sat_qkd_lab.run calibration-fit --telemetry telemetry.json --outdir .
 ```
+
+Command outputs:
+- `sweep`: `reports/latest.json`, `figures/qber_headroom_vs_loss.png` (and attack comparisons if enabled).
+- `pass-sweep`: `reports/latest_pass.json`, `figures/key_rate_vs_elevation.png`, `figures/secure_window.png`.
+- `experiment-run`: `reports/latest_experiment.json` plus a blinded schedule in `reports/`.
+- `forecast-run`: `reports/forecast_blinded.json` (and `reports/forecast_unblinded.json` if `--unblind`).
+- `calibration-fit`: `reports/calibration_fit.json` and `reports/calibration_params.json`.
+
+## Outputs
+
+Reports are written under `reports/` (for example: `reports/latest.json`, `reports/latest_pass.json`, `reports/latest_experiment.json`, `reports/forecast_blinded.json`). Figures land under `figures/`. Headroom is defined as `qber_abort - qber_mean`.
+
+## Optional dashboard
+
+Install: `./py -m pip install -e ".[dashboard]"`
+Launch: `./py -m sat_qkd_lab.dashboard`
+The dashboard reads/writes the latest reports and figures. It is blinded by default; unblinding requires an explicit toggle.
 
 ## Artifacts & provenance
 
