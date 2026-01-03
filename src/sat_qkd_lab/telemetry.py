@@ -16,7 +16,24 @@ class TelemetryRecord:
     qber_mean: float
     n_sent: Optional[int] = None
     timestamp_utc: Optional[str] = None
+    coincidence_histogram: Optional[List[float]] = None
+    coincidence_bin_seconds: Optional[float] = None
+    car_series: Optional[List[float]] = None
+    lock_state_series: Optional[List[int]] = None
+    background_rate: Optional[float] = None
+    off_window_counts: Optional[float] = None
+    off_window_seconds: Optional[float] = None
+    transmittance_series: Optional[List[float]] = None
     meta: Optional[Dict[str, Any]] = None
+
+
+def _maybe_parse_json(value: Any) -> Any:
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return value
+    return value
 
 
 def _parse_record(row: Dict[str, Any]) -> TelemetryRecord:
@@ -24,11 +41,38 @@ def _parse_record(row: Dict[str, Any]) -> TelemetryRecord:
     qber = float(row.get("qber_mean"))
     n_sent = row.get("n_sent")
     timestamp = row.get("timestamp_utc") or row.get("timestamp")
+    coincidence_histogram = _maybe_parse_json(row.get("coincidence_histogram"))
+    car_series = _maybe_parse_json(row.get("car_series"))
+    lock_state_series = _maybe_parse_json(row.get("lock_state_series"))
+    transmittance_series = _maybe_parse_json(row.get("transmittance_series"))
+    coincidence_bin = row.get("coincidence_bin_seconds") or row.get("coincidence_bin_s")
+    background_rate = row.get("background_rate")
+    off_window_counts = row.get("off_window_counts")
+    off_window_seconds = row.get("off_window_seconds")
     return TelemetryRecord(
         loss_db=loss_db,
         qber_mean=qber,
         n_sent=int(n_sent) if n_sent is not None else None,
         timestamp_utc=timestamp,
+        coincidence_histogram=(
+            [float(v) for v in coincidence_histogram]
+            if isinstance(coincidence_histogram, list) else None
+        ),
+        coincidence_bin_seconds=float(coincidence_bin) if coincidence_bin is not None else None,
+        car_series=(
+            [float(v) for v in car_series] if isinstance(car_series, list) else None
+        ),
+        lock_state_series=(
+            [int(v) for v in lock_state_series]
+            if isinstance(lock_state_series, list) else None
+        ),
+        background_rate=float(background_rate) if background_rate is not None else None,
+        off_window_counts=float(off_window_counts) if off_window_counts is not None else None,
+        off_window_seconds=float(off_window_seconds) if off_window_seconds is not None else None,
+        transmittance_series=(
+            [float(v) for v in transmittance_series]
+            if isinstance(transmittance_series, list) else None
+        ),
         meta=row.get("meta"),
     )
 
