@@ -37,6 +37,18 @@ Link loss in dB maps to transmittance via `loss_db = −10 log10(η)`.
 Satellite passes turn elevation into time‑varying loss and background noise.  
 Finite‑key bounds cap what can be claimed with limited samples, even when averages look good.  
 
+## Instrument primitives (timing + fading)
+
+Timing jitter σ is the detector’s uncertainty in photon arrival time (time‑tag noise).  
+Typical single‑photon detectors sit around 10–200 ps (ps = 10^-12 s).  
+σ interacts with the coincidence window: too much jitter raises accidentals.  
+The coincidence window τc is the tolerance used to match paired detections into coincidences.  
+Typical τc is sub‑ns (ns = 10^-9 s), trading more coincidences for more accidentals.  
+Fading variance Var(T) measures how the instantaneous transmittance T fluctuates.  
+Free‑space optical channels often show heavy‑tailed fading where rare deep fades dominate.  
+Modeling only mean loss is insufficient when Var(T) is large.  
+These primitives will be wired into the time‑tag/coincidence engine, detector effects, and atmospheric fading options in later prompts.  
+
 This lab acts as a link‑budget → security‑budget translator for engineering decisions.  
 
 ## Quickstart
