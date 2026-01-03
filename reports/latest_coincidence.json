@@ -1,0 +1,371 @@
+{
+  "schema_version": "1.0",
+  "mode": "coincidence-sim",
+  "timestamp_utc": "2026-01-03T06:28:50.993496Z",
+  "inputs": {
+    "loss_min": 20.0,
+    "loss_max": 60.0,
+    "steps": 9,
+    "duration_seconds": 1.0,
+    "pair_rate_hz": 500000.0,
+    "background_rate_hz": 50000.0,
+    "jitter_ps": 80.0,
+    "tau_ps": 200.0,
+    "seed": 0
+  },
+  "records": [
+    {
+      "loss_db": 20.0,
+      "coincidences": 51,
+      "accidentals": 1,
+      "car": 51.0,
+      "matrices": {
+        "Z": [
+          [
+            5,
+            0
+          ],
+          [
+            0,
+            5
+          ]
+        ],
+        "X": [
+          [
+            3,
+            0
+          ],
+          [
+            0,
+            5
+          ]
+        ]
+      },
+      "visibility": 1.0,
+      "chsh_s": 2.0,
+      "chsh_sigma": 0.27472112789737807,
+      "correlations": {
+        "AB": 1.0,
+        "ABp": 1.0,
+        "ApB": 1.0,
+        "ApBp": 1.0
+      },
+      "aborted": false
+    },
+    {
+      "loss_db": 25.0,
+      "coincidences": 1,
+      "accidentals": 2,
+      "car": 0.5,
+      "matrices": {
+        "Z": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "X": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            2
+          ]
+        ]
+      },
+      "visibility": 0.5,
+      "chsh_s": 0.0,
+      "chsh_sigma": 2.0,
+      "correlations": {
+        "AB": 0.0,
+        "ABp": 1.0,
+        "ApB": 0.0,
+        "ApBp": 1.0
+      },
+      "aborted": true
+    },
+    {
+      "loss_db": 30.0,
+      "coincidences": 1,
+      "accidentals": 2,
+      "car": 0.5,
+      "matrices": {
+        "Z": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "X": [
+          [
+            1,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ]
+      },
+      "visibility": 0.5,
+      "chsh_s": 0.0,
+      "chsh_sigma": 1.4142135623730951,
+      "correlations": {
+        "AB": 0.0,
+        "ABp": 1.0,
+        "ApB": 0.0,
+        "ApBp": 1.0
+      },
+      "aborted": true
+    },
+    {
+      "loss_db": 35.0,
+      "coincidences": 0,
+      "accidentals": 2,
+      "car": 0.0,
+      "matrices": {
+        "Z": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "X": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ]
+      },
+      "visibility": 0.0,
+      "chsh_s": 0.0,
+      "chsh_sigma": 2.0,
+      "correlations": {
+        "AB": 0.0,
+        "ABp": 0.0,
+        "ApB": 0.0,
+        "ApBp": 0.0
+      },
+      "aborted": true
+    },
+    {
+      "loss_db": 40.0,
+      "coincidences": 0,
+      "accidentals": 3,
+      "car": 0.0,
+      "matrices": {
+        "Z": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "X": [
+          [
+            1,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ]
+      },
+      "visibility": 0.5,
+      "chsh_s": 0.0,
+      "chsh_sigma": 2.0,
+      "correlations": {
+        "AB": 0.0,
+        "ABp": 1.0,
+        "ApB": 0.0,
+        "ApBp": 1.0
+      },
+      "aborted": true
+    },
+    {
+      "loss_db": 45.0,
+      "coincidences": 0,
+      "accidentals": 1,
+      "car": 0.0,
+      "matrices": {
+        "Z": [
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "X": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ]
+      },
+      "visibility": 0.5,
+      "chsh_s": -2.0,
+      "chsh_sigma": 2.0,
+      "correlations": {
+        "AB": -1.0,
+        "ABp": 0.0,
+        "ApB": -1.0,
+        "ApBp": 0.0
+      },
+      "aborted": true
+    },
+    {
+      "loss_db": 50.0,
+      "coincidences": 0,
+      "accidentals": 0,
+      "car": 0.0,
+      "matrices": {
+        "Z": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "X": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ]
+      },
+      "visibility": 0.0,
+      "chsh_s": 0.0,
+      "chsh_sigma": 2.0,
+      "correlations": {
+        "AB": 0.0,
+        "ABp": 0.0,
+        "ApB": 0.0,
+        "ApBp": 0.0
+      },
+      "aborted": true
+    },
+    {
+      "loss_db": 55.0,
+      "coincidences": 0,
+      "accidentals": 1,
+      "car": 0.0,
+      "matrices": {
+        "Z": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "X": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ]
+      },
+      "visibility": 0.0,
+      "chsh_s": 0.0,
+      "chsh_sigma": 2.0,
+      "correlations": {
+        "AB": 0.0,
+        "ABp": 0.0,
+        "ApB": 0.0,
+        "ApBp": 0.0
+      },
+      "aborted": true
+    },
+    {
+      "loss_db": 60.0,
+      "coincidences": 0,
+      "accidentals": 3,
+      "car": 0.0,
+      "matrices": {
+        "Z": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            1
+          ]
+        ],
+        "X": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ]
+      },
+      "visibility": 0.5,
+      "chsh_s": 2.0,
+      "chsh_sigma": 2.0,
+      "correlations": {
+        "AB": 1.0,
+        "ABp": 0.0,
+        "ApB": 1.0,
+        "ApBp": 0.0
+      },
+      "aborted": false
+    }
+  ],
+  "summary": {
+    "max_car": 51.0,
+    "mean_car": 5.777777777777778,
+    "min_visibility": 0.0,
+    "min_chsh_s": 2.0
+  },
+  "artifacts": {
+    "car_plot": "figures/car_vs_loss.png",
+    "chsh_plot": "figures/chsh_s_vs_loss.png",
+    "visibility_plot": "figures/visibility_vs_loss.png"
+  }
+}

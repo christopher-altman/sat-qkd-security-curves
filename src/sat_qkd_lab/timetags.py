@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Tuple
+import math
 import numpy as np
 
 
@@ -102,3 +103,63 @@ def merge_time_tags(signal: TimeTags, background: TimeTags) -> TimeTags:
     basis = np.concatenate([signal.basis, background.basis])
     bit = np.concatenate([signal.bit, background.bit])
     return _sort_tags(TimeTags(times=times, is_signal=is_signal, basis=basis, bit=bit))
+
+
+def apply_dead_time(tags: TimeTags, dead_time_s: float) -> TimeTags:
+    """
+    Apply detector dead time by discarding events within the window.
+    """
+    if dead_time_s <= 0 or tags.times.size == 0:
+        return tags
+    keep = []
+    last_time = -np.inf
+    for idx, t in enumerate(tags.times):
+        if t - last_time >= dead_time_s:
+            keep.append(idx)
+            last_time = t
+    keep_idx = np.array(keep, dtype=int)
+    return TimeTags(
+        times=tags.times[keep_idx],
+        is_signal=tags.is_signal[keep_idx],
+        basis=tags.basis[keep_idx],
+        bit=tags.bit[keep_idx],
+    )
+
+
+def add_afterpulsing(
+    tags: TimeTags,
+    p_afterpulse: float,
+    window_s: float,
+    decay: float,
+    seed: int,
+) -> TimeTags:
+    """
+    Add afterpulse background events following signal detections.
+    """
+    if p_afterpulse <= 0 or window_s <= 0 or tags.times.size == 0:
+        return tags
+    rng = np.random.default_rng(seed)
+    new_times = []
+    new_basis = []
+    new_bits = []
+    for t, is_sig in zip(tags.times, tags.is_signal):
+        if not is_sig:
+            continue
+        dt = rng.random() * window_s
+        if decay > 0.0:
+            prob = p_afterpulse * math.exp(-dt / decay)
+        else:
+            prob = p_afterpulse
+        if rng.random() < prob:
+            new_times.append(min(t + dt, window_s + t))
+            new_basis.append(rng.integers(0, 2))
+            new_bits.append(rng.integers(0, 2))
+    if not new_times:
+        return tags
+    after_tags = TimeTags(
+        times=np.array(new_times, dtype=float),
+        is_signal=np.zeros(len(new_times), dtype=bool),
+        basis=np.array(new_basis, dtype=np.int8),
+        bit=np.array(new_bits, dtype=np.int8),
+    )
+    return merge_time_tags(tags, _sort_tags(after_tags))

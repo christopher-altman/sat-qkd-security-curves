@@ -1,9 +1,61 @@
 from __future__ import annotations
 import numpy as np
 from typing import Optional, Dict, Any
+import math
 from .helpers import h2, RunSummary
 from .detector import DetectorParams, DEFAULT_DETECTOR
 from .attacks import Attack, AttackConfig, AttackState, apply_attack, apply_time_shift
+
+
+def _apply_detector_effects(
+    click: np.ndarray,
+    bg_only: np.ndarray,
+    blinding_forced: Optional[np.ndarray],
+    det: DetectorParams,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, np.ndarray, Optional[np.ndarray]]:
+    afterpulse_enabled = det.p_afterpulse > 0.0 and det.afterpulse_window > 0
+    dead_time_enabled = det.dead_time_pulses > 0
+    if not afterpulse_enabled and not dead_time_enabled:
+        return click, bg_only, blinding_forced
+
+    click = click.copy()
+    bg_only = bg_only.copy()
+    if blinding_forced is not None:
+        blinding_forced = blinding_forced.copy()
+
+    afterpulse_counter = 0
+    afterpulse_age = 0
+    dead_time_counter = 0
+
+    for i in range(click.size):
+        has_afterpulse = afterpulse_counter > 0
+        if afterpulse_counter > 0:
+            afterpulse_counter -= 1
+            afterpulse_age += 1
+        if dead_time_counter > 0:
+            dead_time_counter -= 1
+            click[i] = False
+            bg_only[i] = False
+            if blinding_forced is not None:
+                blinding_forced[i] = False
+            continue
+
+        if has_afterpulse and not click[i]:
+            if det.afterpulse_decay > 0.0:
+                decay = math.exp(-afterpulse_age / det.afterpulse_decay)
+            else:
+                decay = 1.0
+            if rng.random() < det.p_afterpulse * decay:
+                click[i] = True
+                bg_only[i] = True
+
+        if click[i]:
+            afterpulse_counter = det.afterpulse_window
+            afterpulse_age = 0
+            dead_time_counter = det.dead_time_pulses
+
+    return click, bg_only, blinding_forced
 
 def simulate_bb84(
     n_pulses: int = 200_000,
@@ -79,6 +131,14 @@ def simulate_bb84(
 
     # Track which clicks are background-only (will be random bits)
     bg_only = bg_click & (~sig_click)
+
+    click, bg_only, _ = _apply_detector_effects(
+        click=click,
+        bg_only=bg_only,
+        blinding_forced=None,
+        det=det,
+        rng=rng,
+    )
 
     state = apply_attack(
         config,
