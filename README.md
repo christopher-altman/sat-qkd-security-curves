@@ -95,6 +95,10 @@ test -x .venv/bin/python || $PY -m venv .venv
 │  ├─ pass_model.py
 │  ├─ pointing.py
 │  ├─ optics.py
+│  ├─ fim_identifiability.py
+│  ├─ change_points.py
+│  ├─ constellation.py
+│  ├─ hil_adapters.py
 │  ├─ experiment.py
 │  ├─ forecast.py
 │  ├─ windows.py
@@ -133,18 +137,26 @@ Notes: `docs/` contains local prompt artifacts and may be gitignored for archiva
 ./py -m sat_qkd_lab.run forecast-run --forecasts forecasts.json --outdir .
 ./py -m sat_qkd_lab.run calibration-fit --telemetry telemetry.json --outdir .
 ./py -m sat_qkd_lab.run coincidence-sim --loss-min 20 --loss-max 60 --steps 9 --outdir .
+./py -m sat_qkd_lab.run constellation-sweep --n-sats 4 --n-stations 2 --outdir .
+./py -m sat_qkd_lab.run experiment-run --bell-mode --outdir .
+./py -m sat_qkd_lab.run experiment-run --ingest-tags tags.json --outdir .
 ```
 
 Command outputs:
 - `sweep`: `reports/latest.json`, `figures/qber_headroom_vs_loss.png` (and attack comparisons if enabled).
 - `pass-sweep`: `reports/latest_pass.json`, `figures/key_rate_vs_elevation.png`, `figures/secure_window.png`.
   - Phase 3 flags: `--fading` (lognormal), `--pointing` with `--acq-seconds`, `--dropout-prob`, `--relock-seconds`, `--pointing-jitter-urad`, plus `--filter-bandwidth-nm`, `--detector-temp-c`.
+- `pass-sweep` reports include anomaly incident cards derived from time-series change points.
 - `experiment-run`: `reports/latest_experiment.json` plus a blinded schedule in `reports/`.
+- `experiment-run --bell-mode`: adds coincidence matrices, visibility, and CHSH S in the report.
+- `experiment-run --ingest-tags`: ingests time-tag files (JSON/CSV) and adds HIL validation diffs.
 - `forecast-run`: `reports/forecast_blinded.json` (and `reports/forecast_unblinded.json` if `--unblind`).
+- `forecast-run --estimate-identifiability`: adds FIM condition number, covariance, and metric CIs.
 - `calibration-fit`: `reports/calibration_fit.json` and `reports/calibration_params.json`.
 - `coincidence-sim`: `reports/latest_coincidence.json`, `figures/car_vs_loss.png` (plus CHSH/visibility plots if enabled).
   - Timing flags: `--clock-offset-s`, `--clock-drift-ppm`, `--tdc-ps`, `--estimate-offset`.
   - Stream-mode flags: `--stream-mode`, `--gate-duty-cycle`, `--dead-time-ns`, `--afterpulse-prob`.
+- `constellation-sweep`: `reports/constellation_inventory.json`, `figures/inventory_timeseries.png`, `figures/inventory_flow.png`.
 
 ## Outputs
 
@@ -159,6 +171,18 @@ Phase 3 outputs:
 Realism knobs (units):
 - Timing jitter σ [ps], coincidence window τc [ps], TDC resolution [ps], clock drift [ppm].
 - Filter bandwidth [nm], detector temperature [°C], pointing jitter [µrad].
+
+## Calibration confidence hygiene
+
+Identifiability here means the calibration fit is well-conditioned; if the Fisher information is near-singular, parameter estimates are not unique. Check the FIM condition number and covariance in `forecast-run --estimate-identifiability` outputs. If identifiability is weak, treat residuals as model uncertainty rather than effects.
+
+## Ops / inventory
+
+Constellation sweeps model key inventory (bits) over time, with production per pass and continuous consumption. Outputs are written to `reports/constellation_inventory.json` and plotted in `figures/inventory_timeseries.png` and `figures/inventory_flow.png`.
+
+## Hardware-in-the-loop
+
+Use `experiment-run --ingest-tags tags.json` to ingest time-tag logs for validation. The report includes computed CAR/QBER from real tags plus diffs versus model expectations. This is a validation and calibration aid, not a security proof.
 
 ## Optional dashboard
 
