@@ -81,6 +81,7 @@ from .timing import TimingModel
 from .event_stream import StreamParams, generate_event_stream
 from .optics import OpticalParams, background_rate_hz, dark_count_rate_hz
 from .constellation import schedule_passes, simulate_inventory
+from .fading_samples import sample_fading_transmittance, plot_eta_samples
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -312,6 +313,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Lognormal sigma for fading (default: 0.3)")
     ps.add_argument("--fading-samples", type=int, default=50,
                     help="Number of fading samples per time step")
+    ps.add_argument("--fading-trials", type=int, default=1,
+                    help="Independent fading trials for secure window stats")
     ps.add_argument("--fading-seed", type=int, default=0,
                     help="Seed for fading sampling (default: 0)")
     # Pointing acquisition/track/dropout dynamics
@@ -592,6 +595,7 @@ def _validate_args(args: argparse.Namespace) -> None:
         if args.fading:
             validate_float("fading-sigma-ln", args.fading_sigma_ln, min_value=0.0)
             validate_int("fading-samples", args.fading_samples, min_value=1)
+            validate_int("fading-trials", args.fading_trials, min_value=1)
             validate_seed(args.fading_seed)
         if args.pointing:
             validate_float("acq-seconds", args.acq_seconds, min_value=0.0)
@@ -1554,16 +1558,21 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
     print("Plot:", secure_plot_alt_path)
 
     if args.fading:
-        fading_samples = sample_fading_factors(
-            args.fading_samples,
-            args.fading_sigma_ln,
-            np.random.default_rng(args.fading_seed),
+        fading_samples = sample_fading_transmittance(
+            sigma_ln=args.fading_sigma_ln,
+            n_samples=max(200, args.fading_samples),
+            seed=args.fading_seed,
         )
         fading_plot_path = plot_eta_fading_samples(
             fading_samples,
             str(outdir / "figures" / "eta_fading_samples.png"),
         )
         print("Plot:", fading_plot_path)
+        eta_plot_path = plot_eta_samples(
+            fading_samples,
+            str(outdir / "figures" / "eta_samples.png"),
+        )
+        print("Plot:", eta_plot_path)
         if summary_base is not None:
             impact_plot_path = plot_secure_window_impact(
                 summary_base["secure_window_seconds"],
@@ -1669,6 +1678,52 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         records_pass,
         include_ci=finite_key_params is not None or args.fading,
     )
+    def _count_secure_fragments(records):
+        fragments = 0
+        in_window = False
+        for rec in records:
+            active = rec.get("key_rate_per_pulse", 0.0) > 0.0
+            if active and not in_window:
+                fragments += 1
+            in_window = active
+        return fragments
+
+    fading_variance = None
+    fragment_stats = None
+    if args.fading:
+        eta_samples = sample_fading_transmittance(
+            sigma_ln=args.fading_sigma_ln,
+            n_samples=max(200, args.fading_samples),
+            seed=args.fading_seed,
+        )
+        fading_variance = float(np.var(eta_samples, ddof=1)) if eta_samples.size > 1 else 0.0
+        if args.fading_trials > 1:
+            fragment_trials = []
+            for trial in range(args.fading_trials):
+                fading_trial = FadingParams(
+                    enabled=True,
+                    sigma_ln=args.fading_sigma_ln,
+                    n_samples=args.fading_samples,
+                    seed=args.fading_seed + trial,
+                )
+                recs_trial, _ = compute_pass_records(
+                    params=pass_params,
+                    link_params=link_params,
+                    detector=detector,
+                    finite_key=finite_key_params,
+                    calibration=calibration,
+                    fading=fading_trial,
+                    pointing=pointing_params,
+                )
+                fragment_trials.append(_count_secure_fragments(recs_trial))
+            frag_mean = float(np.mean(fragment_trials)) if fragment_trials else 0.0
+            frag_std = float(np.std(fragment_trials, ddof=1)) if len(fragment_trials) > 1 else 0.0
+            fragment_stats = {
+                "mean": frag_mean,
+                "ci_low": frag_mean - 1.96 * frag_std,
+                "ci_high": frag_mean + 1.96 * frag_std,
+                "trials": fragment_trials,
+            }
     incidents = attribute_incidents(
         pass_time_series,
         detect_change_points(
@@ -1695,6 +1750,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
     if args.fading:
         plots["eta_fading_samples"] = "figures/eta_fading_samples.png"
         plots["secure_window_fading_impact"] = "figures/secure_window_fading_impact.png"
+        plots["eta_samples"] = "figures/eta_samples.png"
     if args.filter_bandwidth_nm > 0:
         plots["background_rate_vs_bandwidth"] = "figures/background_rate_vs_bandwidth.png"
     if args.pointing:
@@ -1739,6 +1795,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
                 "params": {
                     "sigma_ln": float(args.fading_sigma_ln),
                     "samples": int(args.fading_samples),
+                    "trials": int(args.fading_trials),
                     "seed": int(args.fading_seed),
                 },
             },
@@ -1761,6 +1818,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
             "key_rate_bps": "bits/s",
             "secret_bits": "bits",
             "qber": "unitless",
+            "fading_variance": "unitless",
         },
         "time_series": pass_time_series,
         "summary": summary_pass,
@@ -1770,6 +1828,13 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         },
         "assumptions": assumptions,
     }
+    if fading_variance is not None:
+        pass_report["summary"]["fading_variance"] = fading_variance
+    if fragment_stats is not None:
+        pass_report["summary"]["secure_window_fragments_mean"] = fragment_stats["mean"]
+        pass_report["summary"]["secure_window_fragments_ci_low"] = fragment_stats["ci_low"]
+        pass_report["summary"]["secure_window_fragments_ci_high"] = fragment_stats["ci_high"]
+        pass_report["summary"]["secure_window_fragments_trials"] = fragment_stats["trials"]
 
     pass_report_path = outdir / "reports" / "latest_pass.json"
     with open(pass_report_path, "w") as f:
