@@ -39,6 +39,8 @@ from .plotting import (
     plot_car_vs_loss,
     plot_chsh_s_vs_loss,
     plot_visibility_vs_loss,
+    plot_inventory_timeseries,
+    plot_inventory_flow,
     plot_eta_fading_samples,
     plot_secure_window_impact,
     plot_pointing_lock_state,
@@ -78,6 +80,7 @@ from .eb_observables import compute_observables
 from .timing import TimingModel
 from .event_stream import StreamParams, generate_event_stream
 from .optics import OpticalParams, background_rate_hz, dark_count_rate_hz
+from .constellation import schedule_passes, simulate_inventory
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -381,6 +384,20 @@ def build_parser() -> argparse.ArgumentParser:
     cf.add_argument("--outdir", type=str, default=".",
                     help="Output directory for reports (default: .)")
 
+    # --- constellation-sweep command ---
+    csw = sub.add_parser("constellation-sweep", help="Schedule constellation passes and inventory.")
+    csw.add_argument("--n-sats", type=int, default=4)
+    csw.add_argument("--n-stations", type=int, default=2)
+    csw.add_argument("--horizon-hours", type=float, default=24.0)
+    csw.add_argument("--passes-per-sat", type=int, default=3)
+    csw.add_argument("--pass-duration-s", type=float, default=600.0)
+    csw.add_argument("--initial-bits", type=float, default=0.0)
+    csw.add_argument("--production-bits-per-pass", type=float, default=5e6)
+    csw.add_argument("--consumption-bps", type=float, default=2e5)
+    csw.add_argument("--seed", type=int, default=0)
+    csw.add_argument("--outdir", type=str, default=".",
+                     help="Output directory for reports/figures (default: .)")
+
     # --- coincidence-sim command ---
     cs = sub.add_parser("coincidence-sim", help="Simulate time-tagged coincidences and CAR vs loss.")
     cs.add_argument("--loss-min", type=float, default=20.0)
@@ -456,6 +473,8 @@ def main() -> None:
         _run_coincidence_sim(args)
     elif args.cmd == "calibration-fit":
         _run_calibration_fit(args)
+    elif args.cmd == "constellation-sweep":
+        _run_constellation_sweep(args)
 
 
 def _validate_args(args: argparse.Namespace) -> None:
@@ -658,6 +677,16 @@ def _validate_args(args: argparse.Namespace) -> None:
             raise ValueError("flip-min must be <= flip-max")
         if args.eta_scale_min > args.eta_scale_max:
             raise ValueError("eta-scale-min must be <= eta-scale-max")
+    elif args.cmd == "constellation-sweep":
+        validate_int("n-sats", args.n_sats, min_value=1)
+        validate_int("n-stations", args.n_stations, min_value=1)
+        validate_float("horizon-hours", args.horizon_hours, min_value=0.1)
+        validate_int("passes-per-sat", args.passes_per_sat, min_value=1)
+        validate_float("pass-duration-s", args.pass_duration_s, min_value=1.0)
+        validate_float("initial-bits", args.initial_bits, min_value=0.0)
+        validate_float("production-bits-per-pass", args.production_bits_per_pass, min_value=0.0)
+        validate_float("consumption-bps", args.consumption_bps, min_value=0.0)
+        validate_seed(args.seed)
 
 
 def _resolve_n_sent_for_sweep(args: argparse.Namespace) -> int:
@@ -2084,6 +2113,90 @@ def _run_calibration_fit(args: argparse.Namespace) -> None:
         json.dump(report, f, indent=2)
         f.write("\n")
     print("Wrote:", report_path)
+
+
+def _run_constellation_sweep(args: argparse.Namespace) -> None:
+    """Execute constellation pass scheduling and inventory simulation."""
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    (outdir / "reports").mkdir(exist_ok=True)
+    (outdir / "figures").mkdir(exist_ok=True)
+
+    horizon_seconds = float(args.horizon_hours) * 3600.0
+    schedule = schedule_passes(
+        n_sats=args.n_sats,
+        n_stations=args.n_stations,
+        horizon_seconds=horizon_seconds,
+        passes_per_sat=args.passes_per_sat,
+        pass_duration_s=args.pass_duration_s,
+        seed=args.seed,
+    )
+    inventory_series = simulate_inventory(
+        schedule=schedule,
+        horizon_seconds=horizon_seconds,
+        initial_bits=args.initial_bits,
+        production_bits_per_pass=args.production_bits_per_pass,
+        consumption_bps=args.consumption_bps,
+    )
+
+    schedule_records = [
+        {
+            "satellite_id": event.satellite_id,
+            "station_id": event.station_id,
+            "t_start_s": event.t_start_s,
+            "t_end_s": event.t_end_s,
+        }
+        for event in schedule
+    ]
+
+    inventory_plot_path = plot_inventory_timeseries(
+        inventory_series["t_seconds"],
+        inventory_series["inventory_bits"],
+        str(outdir / "figures" / "inventory_timeseries.png"),
+    )
+    flow_plot_path = plot_inventory_flow(
+        inventory_series["t_seconds"],
+        inventory_series["produced_bits"],
+        inventory_series["consumed_bits"],
+        str(outdir / "figures" / "inventory_flow.png"),
+    )
+
+    report = {
+        "schema_version": "1.0",
+        "mode": "constellation-sweep",
+        "timestamp_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "inputs": {
+            "n_sats": int(args.n_sats),
+            "n_stations": int(args.n_stations),
+            "horizon_hours": float(args.horizon_hours),
+            "passes_per_sat": int(args.passes_per_sat),
+            "pass_duration_s": float(args.pass_duration_s),
+            "initial_bits": float(args.initial_bits),
+            "production_bits_per_pass": float(args.production_bits_per_pass),
+            "consumption_bps": float(args.consumption_bps),
+            "seed": int(args.seed),
+        },
+        "schedule": schedule_records,
+        "inventory": inventory_series,
+        "summary": {
+            "n_passes": len(schedule_records),
+            "total_produced_bits": inventory_series["produced_bits"][-1] if inventory_series["produced_bits"] else 0.0,
+            "total_consumed_bits": inventory_series["consumed_bits"][-1] if inventory_series["consumed_bits"] else 0.0,
+            "final_inventory_bits": inventory_series["inventory_bits"][-1] if inventory_series["inventory_bits"] else 0.0,
+        },
+        "artifacts": {
+            "inventory_plot": "figures/inventory_timeseries.png",
+            "flow_plot": "figures/inventory_flow.png",
+        },
+    }
+
+    report_path = outdir / "reports" / "constellation_inventory.json"
+    with open(report_path, "w") as f:
+        json.dump(report, f, indent=2)
+        f.write("\n")
+    print("Wrote:", report_path)
+    print("Plot:", inventory_plot_path)
+    print("Plot:", flow_plot_path)
 
 
 if __name__ == "__main__":

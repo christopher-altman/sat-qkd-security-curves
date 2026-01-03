@@ -207,6 +207,44 @@ def plot_key_rate_vs_loss_ci(
     return out_path
 
 
+def plot_inventory_timeseries(
+    t_seconds: Sequence[float],
+    inventory_bits: Sequence[float],
+    out_path: str,
+) -> str:
+    """Plot key inventory over time."""
+    fig, ax = plt.subplots()
+    ax.plot(t_seconds, inventory_bits, label="Inventory")
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Key inventory (bits)")
+    ax.set_title("Key inventory over time")
+    ax.legend()
+    ax.set_ylim(bottom=0)
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    return out_path
+
+
+def plot_inventory_flow(
+    t_seconds: Sequence[float],
+    produced_bits: Sequence[float],
+    consumed_bits: Sequence[float],
+    out_path: str,
+) -> str:
+    """Plot cumulative production and consumption over time."""
+    fig, ax = plt.subplots()
+    ax.plot(t_seconds, produced_bits, label="Produced")
+    ax.plot(t_seconds, consumed_bits, label="Consumed")
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Cumulative bits")
+    ax.set_title("Key production and consumption")
+    ax.legend()
+    ax.set_ylim(bottom=0)
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    return out_path
+
+
 # --- Decoy-State Plotting ---
 
 def plot_decoy_key_rate_vs_loss(
