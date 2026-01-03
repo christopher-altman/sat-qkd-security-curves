@@ -348,6 +348,18 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Independent fading trials for secure window stats")
     ps.add_argument("--fading-seed", type=int, default=0,
                     help="Seed for fading sampling (default: 0)")
+    ps.add_argument("--fading-ou", action="store_true",
+                    help="Enable OU time-correlated fading for transmittance")
+    ps.add_argument("--fading-ou-mean", type=float, default=1.0,
+                    help="OU mean transmittance multiplier (default: 1.0)")
+    ps.add_argument("--fading-ou-sigma", type=float, default=0.1,
+                    help="OU sigma for transmittance (default: 0.1)")
+    ps.add_argument("--fading-ou-tau-s", type=float, default=30.0,
+                    help="OU correlation time in seconds (default: 30)")
+    ps.add_argument("--fading-ou-seed", type=int, default=0,
+                    help="Seed for OU fading (default: 0)")
+    ps.add_argument("--fading-ou-outage-threshold", type=float, default=0.2,
+                    help="Outage threshold for OU transmittance (default: 0.2)")
     # Pointing acquisition/track/dropout dynamics
     ps.add_argument("--pointing", action="store_true",
                     help="Enable pointing acquisition/track/dropout model")
@@ -741,6 +753,12 @@ def _validate_args(args: argparse.Namespace) -> None:
             validate_int("fading-samples", args.fading_samples, min_value=1)
             validate_int("fading-trials", args.fading_trials, min_value=1)
             validate_seed(args.fading_seed)
+        if args.fading_ou:
+            validate_float("fading-ou-mean", args.fading_ou_mean, min_value=0.0)
+            validate_float("fading-ou-sigma", args.fading_ou_sigma, min_value=0.0)
+            validate_float("fading-ou-tau-s", args.fading_ou_tau_s, min_value=1e-9)
+            validate_float("fading-ou-outage-threshold", args.fading_ou_outage_threshold, min_value=0.0)
+            validate_seed(args.fading_ou_seed)
         if args.pointing:
             validate_float("acq-seconds", args.acq_seconds, min_value=0.0)
             validate_float("dropout-prob", args.dropout_prob, min_value=0.0, max_value=1.0)
@@ -1644,6 +1662,33 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         time_step_s=args.time_step,
         pass_duration_s=args.pass_duration,
     )
+    fading_ou_values = None
+    fading_ou_stats = None
+    outage_stats = None
+    if args.fading_ou:
+        theta = 1.0 / args.fading_ou_tau_s if args.fading_ou_tau_s > 0 else 0.0
+        ou_times, ou_values = simulate_ou_transmittance(
+            duration_s=args.pass_duration,
+            dt_s=args.time_step,
+            mu=args.fading_ou_mean,
+            theta=theta,
+            sigma=args.fading_ou_sigma,
+            seed=args.fading_ou_seed,
+            t0=min(1.0, max(0.0, args.fading_ou_mean)),
+        )
+        if ou_times.size and ou_times.size != len(time_s):
+            ou_values = np.interp(time_s, ou_times, ou_values)
+        fading_ou_values = np.clip(ou_values, 0.0, 1.0)
+        outage_stats = compute_outage_clusters(
+            np.array(time_s, dtype=float),
+            np.array(fading_ou_values, dtype=float),
+            threshold=args.fading_ou_outage_threshold,
+        )
+        fading_ou_stats = {
+            "mean": float(np.mean(fading_ou_values)) if len(fading_ou_values) else 0.0,
+            "var": float(np.var(fading_ou_values, ddof=1)) if len(fading_ou_values) > 1 else 0.0,
+            "corr_time_seconds": float(args.fading_ou_tau_s),
+        }
     background_scale = None
     if args.background_process:
         bg_params = BackgroundProcessParams(
@@ -1748,6 +1793,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         pointing=pointing_params,
         background_scale=background_scale,
         polarization_angle_rad=polarization_angle,
+        fading_series=fading_ou_values,
     )
 
     summary_base = None
@@ -1760,6 +1806,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
             calibration=calibration,
             fading=None,
             background_scale=background_scale,
+            fading_series=fading_ou_values,
         )
 
     # Generate plots
@@ -1808,6 +1855,21 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
                 str(outdir / "figures" / "secure_window_fading_impact.png"),
             )
             print("Plot:", impact_plot_path)
+
+    if args.fading_ou and fading_ou_values is not None:
+        fading_ou_plot_path = plot_fading_evolution(
+            np.array(time_s, dtype=float),
+            np.array(fading_ou_values, dtype=float),
+            str(outdir / "figures" / "fading_ou_time.png"),
+        )
+        print("Plot:", fading_ou_plot_path)
+        secure_mask = [r.get("key_rate_per_pulse", 0.0) > 0.0 for r in records_pass]
+        frag_plot_path = plot_secure_window_fragmentation(
+            np.array(time_s, dtype=float),
+            secure_mask,
+            str(outdir / "figures" / "secure_window_fragmentation.png"),
+        )
+        print("Plot:", frag_plot_path)
 
     loss_plot_path = plot_loss_vs_elevation(
         records_pass,
@@ -1941,6 +2003,10 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
             pass_time_series["polarization_angle_comp_deg"] = [
                 float(v) for v in np.rad2deg(polarization_angle)
             ]
+    if args.fading_ou and fading_ou_values is not None:
+        pass_time_series["fading_ou_transmittance"] = [
+            float(v) for v in fading_ou_values
+        ]
     def _count_secure_fragments(records):
         fragments = 0
         in_window = False
@@ -1978,6 +2044,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
                     fading=fading_trial,
                     pointing=pointing_params,
                     background_scale=background_scale,
+                    fading_series=fading_ou_values,
                 )
                 fragment_trials.append(_count_secure_fragments(recs_trial))
             frag_mean = float(np.mean(fragment_trials)) if fragment_trials else 0.0
@@ -2007,6 +2074,8 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         assumptions.append("finite_key enabled implies Hoeffding bounds for QBER")
     if args.fading:
         assumptions.append("fading_model lognormal applied to transmittance samples")
+    if args.fading_ou:
+        assumptions.append("fading_ou uses OU time-correlated transmittance multiplier")
     if args.pointing:
         assumptions.append("pointing_model applies acquisition/track/dropout transmittance multiplier")
     assumptions.append("optical_chain scales background with filter bandwidth and temperature")
@@ -2023,6 +2092,9 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         plots["eta_fading_samples"] = "figures/eta_fading_samples.png"
         plots["secure_window_fading_impact"] = "figures/secure_window_fading_impact.png"
         plots["eta_samples"] = "figures/eta_samples.png"
+    if args.fading_ou:
+        plots["fading_ou_time"] = "figures/fading_ou_time.png"
+        plots["secure_window_fragmentation"] = "figures/secure_window_fragmentation.png"
     if args.filter_bandwidth_nm > 0:
         plots["background_rate_vs_bandwidth"] = "figures/background_rate_vs_bandwidth.png"
     if args.pointing:
@@ -2090,6 +2162,16 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
                     "seed": int(args.fading_seed),
                 },
             },
+            "fading_ou": {
+                "enabled": bool(args.fading_ou),
+                "params": {
+                    "mean": float(args.fading_ou_mean),
+                    "sigma": float(args.fading_ou_sigma),
+                    "tau_seconds": float(args.fading_ou_tau_s),
+                    "seed": int(args.fading_ou_seed),
+                    "outage_threshold": float(args.fading_ou_outage_threshold),
+                },
+            },
             "pointing_model": {
                 "enabled": bool(args.pointing),
                 "acq_seconds": float(args.acq_seconds),
@@ -2110,6 +2192,9 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
             "secret_bits": "bits",
             "qber": "unitless",
             "fading_variance": "unitless",
+            "fading_mean": "unitless",
+            "fading_var": "unitless",
+            "fading_corr_time_seconds": "s",
             "background_rate_hz": "Hz",
         },
         "time_series": pass_time_series,
@@ -2138,6 +2223,14 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         pass_report["summary"]["secure_window_fragments_ci_low"] = fragment_stats["ci_low"]
         pass_report["summary"]["secure_window_fragments_ci_high"] = fragment_stats["ci_high"]
         pass_report["summary"]["secure_window_fragments_trials"] = fragment_stats["trials"]
+    if fading_ou_stats is not None:
+        pass_report["summary"]["fading"] = fading_ou_stats
+    if outage_stats is not None:
+        pass_report["summary"]["outages"] = {
+            "count": int(outage_stats.count),
+            "mean_duration_s": float(outage_stats.mean_duration_s),
+            "durations_s": [float(d) for d in outage_stats.durations_s],
+        }
 
     pass_report_path = outdir / "reports" / "latest_pass.json"
     with open(pass_report_path, "w") as f:

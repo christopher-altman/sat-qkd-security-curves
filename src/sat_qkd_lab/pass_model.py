@@ -121,6 +121,7 @@ def compute_pass_records(
     pointing: Optional[PointingParams] = None,
     background_scale: Optional[Sequence[float]] = None,
     polarization_angle_rad: Optional[Sequence[float]] = None,
+    fading_series: Optional[Sequence[float]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Compute per-time-step pass records and summary outputs.
@@ -167,6 +168,10 @@ def compute_pass_records(
             idx = int(round(t_s / params.dt_seconds)) if params.dt_seconds > 0 else 0
             idx = min(max(idx, 0), len(trans_multiplier) - 1)
             eta_ch_mean *= float(trans_multiplier[idx])
+        if fading_series is not None:
+            idx = int(round(t_s / params.dt_seconds)) if params.dt_seconds > 0 else 0
+            idx = min(max(idx, 0), len(fading_series) - 1)
+            eta_ch_mean *= max(0.0, float(fading_series[idx]))
 
         n_sent = int(round(params.rep_rate_hz * params.dt_seconds))
         if fading is not None and fading.enabled:
