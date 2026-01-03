@@ -20,3 +20,4 @@ sat_qkd_lab = ["py.typed"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
+dashboard = ["streamlit"]
