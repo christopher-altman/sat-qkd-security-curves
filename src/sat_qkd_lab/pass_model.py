@@ -34,6 +34,14 @@ class PassModelParams:
     background_mode: str = "night"
 
 
+@dataclass(frozen=True)
+class FadingParams:
+    enabled: bool = False
+    sigma_ln: float = 0.3
+    n_samples: int = 50
+    seed: int = 0
+
+
 def elevation_to_loss_db(elevation_deg: float, link_params: FreeSpaceLinkParams) -> float:
     """Map elevation angle to total channel loss (dB)."""
     return float(total_link_loss_db(float(elevation_deg), link_params))
@@ -73,6 +81,22 @@ def expected_qber(p_sig: float, p_bg: float, flip_prob: float) -> float:
     return min(0.5, max(0.0, qber))
 
 
+def sample_fading_factors(
+    n_samples: int,
+    sigma_ln: float,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """
+    Sample lognormal fading factors with unit mean.
+    """
+    if n_samples <= 0:
+        return np.array([], dtype=float)
+    if sigma_ln <= 0:
+        return np.ones(n_samples, dtype=float)
+    mu = -0.5 * sigma_ln ** 2
+    return rng.lognormal(mean=mu, sigma=sigma_ln, size=n_samples)
+
+
 def _asymptotic_key_rate_per_pulse(
     qber_mean: float,
     sifted_fraction: float,
@@ -91,6 +115,7 @@ def compute_pass_records(
     detector: Optional[DetectorParams] = None,
     finite_key: Optional[FiniteKeyParams] = None,
     calibration: Optional[CalibrationModel] = None,
+    fading: Optional[FadingParams] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Compute per-time-step pass records and summary outputs.
@@ -113,52 +138,95 @@ def compute_pass_records(
     key_rate_bps_values: List[float] = []
     secret_bits_dt_values: List[float] = []
 
+    rng_fading = np.random.default_rng(fading.seed) if fading is not None else None
+
     for t_s, el in zip(time_s, elevation_deg):
         loss_db = elevation_to_loss_db(float(el), link)
-        eta_ch = 10 ** (-loss_db / 10.0)
         p_bg_eff = background_prob(det.p_bg, link, params.background_mode)
-        p_sig = det.eta * eta_ch
-        p_click = p_sig + p_bg_eff - p_sig * p_bg_eff
-        qber_mean = expected_qber(p_sig, p_bg_eff, params.flip_prob)
+        eta_ch_mean = 10 ** (-loss_db / 10.0)
 
         n_sent = int(round(params.rep_rate_hz * params.dt_seconds))
-        n_received = int(round(n_sent * p_click))
-        n_sifted = int(round(n_received * 0.5))
-        n_errors = int(round((0.0 if qber_mean != qber_mean else qber_mean) * n_sifted))
-
-        if finite_key is not None:
-            fk_result = finite_key_rate_per_pulse(
-                n_sent=n_sent,
-                n_sifted=n_sifted,
-                n_errors=n_errors,
-                params=fk,
-                qber_abort_threshold=params.qber_abort_threshold,
-            )
-            if n_sifted > 0:
-                if fk.m_pe is not None:
-                    m_pe = max(1, min(n_sifted, fk.m_pe))
+        if fading is not None and fading.enabled:
+            samples = sample_fading_factors(fading.n_samples, fading.sigma_ln, rng_fading)
+            qbers = []
+            key_rates = []
+            for sample in samples:
+                eta_ch = eta_ch_mean * sample
+                p_sig = det.eta * eta_ch
+                p_click = p_sig + p_bg_eff - p_sig * p_bg_eff
+                qber_sample = expected_qber(p_sig, p_bg_eff, params.flip_prob)
+                n_received = int(round(n_sent * p_click))
+                n_sifted = int(round(n_received * 0.5))
+                if finite_key is not None:
+                    n_errors = int(round((0.0 if qber_sample != qber_sample else qber_sample) * n_sifted))
+                    fk_result = finite_key_rate_per_pulse(
+                        n_sent=n_sent,
+                        n_sifted=n_sifted,
+                        n_errors=n_errors,
+                        params=fk,
+                        qber_abort_threshold=params.qber_abort_threshold,
+                    )
+                    key_rate = fk_result["key_rate_per_pulse"]
                 else:
-                    m_pe = max(1, int(fk.pe_frac * n_sifted))
+                    sifted_fraction = (n_sifted / n_sent) if n_sent > 0 else 0.0
+                    key_rate = _asymptotic_key_rate_per_pulse(
+                        qber_mean=qber_sample,
+                        sifted_fraction=sifted_fraction,
+                        ec_efficiency=fk.ec_efficiency,
+                    )
+                qbers.append(qber_sample)
+                key_rates.append(key_rate)
+
+            qber_mean = float(np.mean(qbers)) if qbers else float("nan")
+            key_rate_per_pulse = float(np.mean(key_rates)) if key_rates else 0.0
+            if qbers:
+                qber_ci_low = float(np.quantile(qbers, 0.025))
+                qber_ci_high = float(np.quantile(qbers, 0.975))
             else:
-                m_pe = 0
-            qber_bounds = finite_key_bounds(
-                n_sifted=n_sifted,
-                n_errors=n_errors,
-                eps_pe=fk.eps_pe,
-                m_pe=m_pe if m_pe > 0 else None,
-            )
-            qber_ci_low = qber_bounds["qber_lower"]
-            qber_ci_high = qber_bounds["qber_upper"]
-            key_rate_per_pulse = fk_result["key_rate_per_pulse"]
+                qber_ci_low = None
+                qber_ci_high = None
         else:
-            sifted_fraction = (n_sifted / n_sent) if n_sent > 0 else 0.0
-            key_rate_per_pulse = _asymptotic_key_rate_per_pulse(
-                qber_mean=qber_mean,
-                sifted_fraction=sifted_fraction,
-                ec_efficiency=fk.ec_efficiency,
-            )
-            qber_ci_low = None
-            qber_ci_high = None
+            eta_ch = eta_ch_mean
+            p_sig = det.eta * eta_ch
+            p_click = p_sig + p_bg_eff - p_sig * p_bg_eff
+            qber_mean = expected_qber(p_sig, p_bg_eff, params.flip_prob)
+            n_received = int(round(n_sent * p_click))
+            n_sifted = int(round(n_received * 0.5))
+            n_errors = int(round((0.0 if qber_mean != qber_mean else qber_mean) * n_sifted))
+
+            if finite_key is not None:
+                fk_result = finite_key_rate_per_pulse(
+                    n_sent=n_sent,
+                    n_sifted=n_sifted,
+                    n_errors=n_errors,
+                    params=fk,
+                    qber_abort_threshold=params.qber_abort_threshold,
+                )
+                if n_sifted > 0:
+                    if fk.m_pe is not None:
+                        m_pe = max(1, min(n_sifted, fk.m_pe))
+                    else:
+                        m_pe = max(1, int(fk.pe_frac * n_sifted))
+                else:
+                    m_pe = 0
+                qber_bounds = finite_key_bounds(
+                    n_sifted=n_sifted,
+                    n_errors=n_errors,
+                    eps_pe=fk.eps_pe,
+                    m_pe=m_pe if m_pe > 0 else None,
+                )
+                qber_ci_low = qber_bounds["qber_lower"]
+                qber_ci_high = qber_bounds["qber_upper"]
+                key_rate_per_pulse = fk_result["key_rate_per_pulse"]
+            else:
+                sifted_fraction = (n_sifted / n_sent) if n_sent > 0 else 0.0
+                key_rate_per_pulse = _asymptotic_key_rate_per_pulse(
+                    qber_mean=qber_mean,
+                    sifted_fraction=sifted_fraction,
+                    ec_efficiency=fk.ec_efficiency,
+                )
+                qber_ci_low = None
+                qber_ci_high = None
 
         key_rate_bps = params.rep_rate_hz * key_rate_per_pulse
         secret_bits_dt = key_rate_bps * params.dt_seconds
@@ -238,7 +306,7 @@ def records_to_time_series(
         "secret_bits_dt": [float(r["secret_bits_dt"]) for r in records],
         "headroom": [float(r["headroom"]) for r in records],
     }
-    if include_ci:
+    if include_ci and "qber_ci_low" in records[0]:
         time_series["qber_ci_low"] = [float(r["qber_ci_low"]) for r in records]
         time_series["qber_ci_high"] = [float(r["qber_ci_high"]) for r in records]
 

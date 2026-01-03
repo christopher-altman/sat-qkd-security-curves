@@ -791,6 +791,40 @@ def plot_visibility_vs_loss(
     return out_path
 
 
+def plot_eta_fading_samples(
+    samples: np.ndarray,
+    out_path: str,
+) -> str:
+    """
+    Plot histogram of fading samples.
+    """
+    fig, ax = plt.subplots()
+    ax.hist(samples, bins=30, color="steelblue", alpha=0.8)
+    ax.set_xlabel("Fading transmittance factor")
+    ax.set_ylabel("Count")
+    ax.set_title("Fading samples (lognormal)")
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    return out_path
+
+
+def plot_secure_window_impact(
+    base_seconds: float,
+    fading_seconds: float,
+    out_path: str,
+) -> str:
+    """
+    Plot secure window duration impact (baseline vs fading).
+    """
+    fig, ax = plt.subplots()
+    ax.bar(["baseline", "fading"], [base_seconds, fading_seconds], color=["#4c72b0", "#dd8452"])
+    ax.set_ylabel("Secure window (s)")
+    ax.set_title("Secure window duration impact")
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    return out_path
+
+
 def plot_decoy_comparison(
     records_bb84: Sequence[Dict[str, Any]],
     records_decoy: Sequence[Dict[str, Any]],

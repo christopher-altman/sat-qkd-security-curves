@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "mode": "coincidence-sim",
-  "timestamp_utc": "2026-01-03T06:28:50.993496Z",
+  "timestamp_utc": "2026-01-03T06:34:22.645321Z",
   "inputs": {
     "loss_min": 20.0,
     "loss_max": 60.0,
@@ -11,6 +11,10 @@
     "background_rate_hz": 50000.0,
     "jitter_ps": 80.0,
     "tau_ps": 200.0,
+    "dead_time_ps": 200.0,
+    "afterpulse_prob": 0.1,
+    "afterpulse_window_ps": 500.0,
+    "afterpulse_decay_ps": 0.0,
     "seed": 0
   },
   "records": [
