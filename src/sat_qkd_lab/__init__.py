@@ -33,6 +33,7 @@ __all__ = [
     "fading_samples",
     "hil_adapters",
     "clock_sync",
+    "ou_fading",
 ]
 
 from . import free_space_link  # makes sat_qkd_lab.free_space_link available
