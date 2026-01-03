@@ -258,11 +258,12 @@ Operators need to see where secrecy collapses long before it fails in the field.
 5. Gisin, N., Ribordy, G., Tittel, W., & Zbinden, H. (2002). [Quantum cryptography.](https://doi.org/10.1103/RevModPhys.74.145) *Reviews of Modern Physics*, *74*(1), 145–195. 
 
 6. Altman, C., Williams, C., Ursin, R., Villoresi, P., Sharma, V. [Astronaut Development and Deployment of a Secure Space Communications Network.](https://drive.google.com/file/d/0B99KWApna6GoX3JzZGMzbzNrMjg/view?resourcekey=0-b1lf7VUq8QmpRriVN5N2sw) NASA NIAC/OCT; DARPA QUINESS (Macroscopic Quantum Communications). 
-7. Tomamichel et al., "Tight finite-key analysis for quantum cryptography" (Nature Comm. 2012)
 
-8. Lim et al., "Concise security bounds for practical decoy-state QKD" (PRA 2014)
+7. Tomamichel *et al*., [Tight finite-key analysis for quantum cryptography](https://www.nature.com/articles/ncomms1631) (Nature Comm. 2012).
 
-9. Bourgoin et al., "Free-space QKD to a moving receiver" (NJP 2013)
+8. Lim *et al*., [Concise security bounds for practical decoy-state QKD](https://arxiv.org/abs/1311.7129) (PRA 2014).
+
+9. Bourgoin *et al*., [Free-space QKD to a moving receiver](https://arxiv.org/abs/1505.00292)  (NJP 2013).
 
 
 ## Citations
