@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from pathlib import Path
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 import json
 
@@ -14,6 +15,14 @@ from sat_qkd_lab.plotting import plot_key_metrics_vs_loss, plot_key_rate_vs_elev
 from sat_qkd_lab.pass_model import PassModelParams, compute_pass_records
 from sat_qkd_lab.experiment import ExperimentParams, run_experiment
 from sat_qkd_lab.forecast_harness import run_forecast_harness
+
+DASHBOARD_PLOTS = {
+    "car_vs_loss": "figures/car_vs_loss.png",
+    "chsh_s_vs_loss": "figures/chsh_s_vs_loss.png",
+    "basis_bias_vs_elevation": "figures/basis_bias_vs_elevation.png",
+    "clock_sync_diagnostics": "figures/clock_sync_diagnostics.png",
+    "pass_fading_evolution": "figures/pass_fading_evolution.png",
+}
 
 
 def _ensure_outdir(path: str) -> Path:
@@ -37,6 +46,36 @@ def _write_json(path: Path, payload: Dict[str, Any]) -> None:
         f.write("\n")
 
 
+def _timestamp_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _plot_index(outdir: Path) -> Dict[str, Optional[str]]:
+    index: Dict[str, Optional[str]] = {}
+    for name, rel_path in DASHBOARD_PLOTS.items():
+        path = outdir / rel_path
+        index[name] = rel_path if path.exists() else None
+    return index
+
+
+def _write_latest_dashboard(outdir: Path, last_action: Optional[str]) -> Dict[str, Any]:
+    payload = {
+        "schema_version": "1.0",
+        "mode": "dashboard",
+        "timestamp_utc": _timestamp_utc(),
+        "last_action": last_action,
+        "plots": _plot_index(outdir),
+    }
+    _write_json(outdir / "reports" / "latest_dashboard.json", payload)
+    return payload
+
+
+def _redact_unblinded(output: Dict[str, Any]) -> Dict[str, Any]:
+    redacted = dict(output)
+    redacted["analysis"] = {"group_labels_included": False}
+    return redacted
+
+
 def run() -> None:
     try:
         import streamlit as st
@@ -50,6 +89,7 @@ def run() -> None:
 
     outdir = st.sidebar.text_input("Output directory", value=".")
     outdir_path = _ensure_outdir(outdir)
+    _write_latest_dashboard(outdir_path, last_action=None)
 
     tab_sweep, tab_pass, tab_experiment, tab_forecast = st.tabs(
         ["Sweep", "Pass", "Experiment", "Forecast"]
@@ -83,6 +123,7 @@ def run() -> None:
                 },
             }
             _write_json(outdir_path / "reports" / "dashboard_sweep.json", report)
+            _write_latest_dashboard(outdir_path, last_action="sweep")
             st.success("Sweep complete.")
             st.image(q_path)
             st.image(k_path)
@@ -119,6 +160,7 @@ def run() -> None:
                 },
             }
             _write_json(outdir_path / "reports" / "dashboard_pass.json", report)
+            _write_latest_dashboard(outdir_path, last_action="pass")
             st.success("Pass sweep complete.")
             st.image(elev_plot)
             st.image(secure_plot)
@@ -141,8 +183,9 @@ def run() -> None:
                 pass_seconds=float(block_seconds) * int(n_blocks),
             )
             output = run_experiment(params, ["qber_mean", "headroom", "total_secret_bits"], outdir_path, None, unblind=bool(unblind))
+            _write_latest_dashboard(outdir_path, last_action="experiment")
             st.success("Experiment complete.")
-            st.json(output)
+            st.json(output if unblind else _redact_unblinded(output))
 
     with tab_forecast:
         st.subheader("Forecast Scoring")
@@ -163,8 +206,20 @@ def run() -> None:
                 rep_rate_hz=float(rep_rate_hz),
                 unblind=bool(unblind),
             )
+            _write_latest_dashboard(outdir_path, last_action="forecast")
             st.success("Forecast scoring complete.")
             st.json(output)
+
+    with st.expander("Plot index", expanded=False):
+        plot_index = _plot_index(outdir_path)
+        for name, rel_path in plot_index.items():
+            if rel_path is None:
+                st.write(f"{name}: missing")
+                continue
+            st.write(f"{name}: {rel_path}")
+            image_path = outdir_path / rel_path
+            if image_path.exists():
+                st.image(str(image_path))
 
 
 def main() -> None:
