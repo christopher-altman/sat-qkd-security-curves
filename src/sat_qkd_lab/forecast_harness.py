@@ -13,6 +13,9 @@ import random
 from .experiment import ExperimentParams, simulate_block_metrics
 from .forecast import Forecast, load_forecasts
 from .pass_model import PassModelParams, compute_pass_records
+from .detector import DEFAULT_DETECTOR, DetectorParams
+from .fim_identifiability import compute_fim_identifiability, propagate_uncertainty
+from .telemetry import TelemetryRecord
 from .scoring import robust_z_score, score_forecast
 from .windows import generate_windows, assign_groups_blinded
 
@@ -60,6 +63,7 @@ def run_forecast_harness(
     block_seconds: float,
     rep_rate_hz: float,
     unblind: bool,
+    estimate_identifiability: bool = False,
 ) -> Dict[str, Any]:
     """Run forecast harness and write blinded/unblinded reports."""
     forecasts = load_forecasts(forecasts_path)
@@ -168,6 +172,7 @@ def run_forecast_harness(
             "block_seconds": block_seconds,
             "forecasts_path": str(forecasts_path),
             "unblind": bool(unblind),
+            "estimate_identifiability": bool(estimate_identifiability),
         },
         "blinding": {
             "blinded": True,
@@ -181,6 +186,80 @@ def run_forecast_harness(
         "scores": scores,
         "summary": summary,
     }
+
+    if estimate_identifiability and pass_records:
+        telemetry_records = [
+            TelemetryRecord(loss_db=rec["loss_db"], qber_mean=rec["qber_mean"])
+            for rec in pass_records
+        ]
+        base_params = {
+            "eta_scale": 1.0,
+            "p_bg": DEFAULT_DETECTOR.p_bg,
+            "flip_prob": pass_params.flip_prob,
+        }
+        ident = compute_fim_identifiability(
+            records=telemetry_records,
+            eta_base=DEFAULT_DETECTOR.eta,
+            params=base_params,
+        )
+
+        def _pass_metrics(params: Dict[str, float]) -> Dict[str, float]:
+            det = DetectorParams(
+                eta=DEFAULT_DETECTOR.eta * params["eta_scale"],
+                p_bg=params["p_bg"],
+                eta_z=DEFAULT_DETECTOR.eta_z,
+                eta_x=DEFAULT_DETECTOR.eta_x,
+            )
+            pm = PassModelParams(
+                max_elevation_deg=pass_params.max_elevation_deg,
+                min_elevation_deg=pass_params.min_elevation_deg,
+                pass_seconds=pass_params.pass_seconds,
+                dt_seconds=pass_params.dt_seconds,
+                flip_prob=params["flip_prob"],
+                rep_rate_hz=pass_params.rep_rate_hz,
+                qber_abort_threshold=pass_params.qber_abort_threshold,
+                background_mode=pass_params.background_mode,
+            )
+            recs, _ = compute_pass_records(params=pm, detector=det)
+            if not recs:
+                return {"key_rate_bps": 0.0, "headroom": 0.0}
+            key_rate_bps_mean = sum(r["key_rate_bps"] for r in recs) / len(recs)
+            headroom_mean = sum(r["headroom"] for r in recs) / len(recs)
+            return {"key_rate_bps": float(key_rate_bps_mean), "headroom": float(headroom_mean)}
+
+        key_rate_mean, key_rate_std = propagate_uncertainty(
+            lambda p: _pass_metrics(p)["key_rate_bps"],
+            base_params,
+            ident.covariance,
+        )
+        headroom_mean, headroom_std = propagate_uncertainty(
+            lambda p: _pass_metrics(p)["headroom"],
+            base_params,
+            ident.covariance,
+        )
+        output["identifiability"] = {
+            "params": ident.params,
+            "covariance": ident.covariance,
+            "condition_number": ident.condition_number,
+            "is_degenerate": ident.is_degenerate,
+            "warnings": ident.warnings,
+        }
+        output["uncertainty"] = {
+            "method": "fim_linear",
+            "metrics": {
+                "key_rate_bps": {
+                    "mean": key_rate_mean,
+                    "ci_low": key_rate_mean - 1.96 * key_rate_std,
+                    "ci_high": key_rate_mean + 1.96 * key_rate_std,
+                },
+                "headroom": {
+                    "mean": headroom_mean,
+                    "ci_low": headroom_mean - 1.96 * headroom_std,
+                    "ci_high": headroom_mean + 1.96 * headroom_std,
+                },
+                "car": None,
+            },
+        }
 
     output_path = outdir / "reports" / "forecast_blinded.json"
     with open(output_path, "w") as f:
