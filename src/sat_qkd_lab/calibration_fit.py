@@ -9,6 +9,7 @@ import numpy as np
 
 from .telemetry import TelemetryRecord
 from .pass_model import expected_qber
+from .fim_identifiability import compute_fim_identifiability
 
 
 @dataclass(frozen=True)
@@ -105,6 +106,48 @@ def predict_with_uncertainty(
             "qber_ci_high": float(ci_high),
         })
     return out
+
+
+def compute_fit_quality(
+    records: List[TelemetryRecord],
+    fit: FitResult,
+    eta_base: float,
+) -> Dict[str, float | Dict[str, float]]:
+    """
+    Compute fit-quality metrics and identifiability diagnostics.
+    """
+    observed = np.array([r.qber_mean for r in records], dtype=float)
+    predicted = np.array([
+        predict_qber(r.loss_db, fit.eta_scale, fit.p_bg, fit.flip_prob, eta_base)
+        for r in records
+    ], dtype=float)
+    ss_res = float(np.sum((observed - predicted) ** 2))
+    ss_tot = float(np.sum((observed - np.mean(observed)) ** 2))
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
+
+    ident = compute_fim_identifiability(
+        records=records,
+        eta_base=eta_base,
+        params={
+            "eta_scale": fit.eta_scale,
+            "p_bg": fit.p_bg,
+            "flip_prob": fit.flip_prob,
+        },
+    )
+    cov = np.array(ident.covariance, dtype=float)
+    diag = np.sqrt(np.maximum(np.diag(cov), 0.0))
+    param_uncertainty = {
+        "eta_scale": float(diag[0]),
+        "p_bg": float(diag[1]),
+        "flip_prob": float(diag[2]),
+    }
+
+    return {
+        "r2": float(r2),
+        "condition_number": float(ident.condition_number),
+        "identifiable": bool(not ident.is_degenerate),
+        "parameter_uncertainty": param_uncertainty,
+    }
 
 
 def _estimate_clock_offset(records: List[TelemetryRecord]) -> Optional[float]:

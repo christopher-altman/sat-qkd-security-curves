@@ -8,7 +8,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 import numpy as np
 
 from .telemetry import TelemetryRecord
-from .calibration_fit import predict_qber
+from .pass_model import expected_qber
 
 
 PARAM_ORDER = ("eta_scale", "p_bg", "flip_prob")
@@ -73,13 +73,9 @@ def compute_fim_identifiability(
         )
 
     def qber_model(param_values: Dict[str, float], loss_db: float) -> float:
-        return predict_qber(
-            loss_db=loss_db,
-            eta_scale=param_values["eta_scale"],
-            p_bg=param_values["p_bg"],
-            flip_prob=param_values["flip_prob"],
-            eta_base=eta_base,
-        )
+        eta_ch = 10 ** (-loss_db / 10.0)
+        p_sig = eta_base * param_values["eta_scale"] * eta_ch
+        return expected_qber(p_sig, param_values["p_bg"], param_values["flip_prob"])
 
     jacobian = []
     for record in records_list:

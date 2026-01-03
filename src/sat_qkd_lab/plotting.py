@@ -321,6 +321,32 @@ def plot_basis_bias_vs_elevation(
     return out_path
 
 
+def plot_calibration_quality_card(
+    r2: float,
+    rmse: float,
+    residual_std: float,
+    condition_number: float,
+    identifiable: bool,
+    out_path: str,
+) -> str:
+    """Render a lightweight calibration quality card."""
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.axis("off")
+    status = "yes" if identifiable else "no"
+    lines = [
+        "Calibration quality card",
+        f"R^2: {r2:.4f}",
+        f"RMSE: {rmse:.4g}",
+        f"Residual std: {residual_std:.4g}",
+        f"FIM cond: {condition_number:.3g}",
+        f"Identifiable: {status}",
+    ]
+    ax.text(0.02, 0.98, "\n".join(lines), va="top", ha="left", fontsize=10)
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    return out_path
+
+
 # --- Decoy-State Plotting ---
 
 def plot_decoy_key_rate_vs_loss(
