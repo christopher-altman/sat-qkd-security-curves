@@ -23,6 +23,11 @@ def _run_pass_sweep_minimal(tmp_path: Path) -> dict:
     return json.loads(report_path.read_text())
 
 
+def _read_latest_json(tmp_path: Path) -> dict:
+    report_path = tmp_path / "reports" / "latest.json"
+    return json.loads(report_path.read_text())
+
+
 def test_units_explicit_in_reports(tmp_path: Path):
     pass_report = _run_pass_sweep_minimal(tmp_path)
     units = pass_report["units"]
@@ -30,6 +35,8 @@ def test_units_explicit_in_reports(tmp_path: Path):
     assert units["rep_rate_hz"] == "Hz"
     assert units["pass_seconds"] == "s"
     assert units["secret_bits"] == "bits"
+    assert units["elevation_deg"] == "deg"
+    assert units["loss_db"] == "dB"
 
 
 def test_blinding_outputs_no_labels(tmp_path: Path):
@@ -66,6 +73,63 @@ def test_forecast_schema_keys_stable(tmp_path: Path):
         rep_rate_hz=1e6,
         unblind=False,
     )
+    for key in ("schema_version", "mode", "inputs", "blinding", "windows", "outcomes", "scores", "summary"):
+        assert key in output
+
+
+def test_latest_pass_keys_stable(tmp_path: Path):
+    pass_report = _run_pass_sweep_minimal(tmp_path)
+    for key in ("schema_version", "mode", "timestamp_utc", "inputs", "units", "time_series", "summary", "artifacts"):
+        assert key in pass_report
+
+
+def test_latest_json_keys_stable(tmp_path: Path):
+    _run_pass_sweep_minimal(tmp_path)
+    latest = _read_latest_json(tmp_path)
+    for key in ("schema_version", "generated_utc", "pass_sweep", "parameters", "artifacts"):
+        assert key in latest
+
+
+def test_experiment_report_keys_stable(tmp_path: Path):
+    exp_params = ExperimentParams(seed=2, n_blocks=2, block_seconds=5.0, rep_rate_hz=1e6, pass_seconds=10.0)
+    run_experiment(
+        params=exp_params,
+        metrics=["qber_mean"],
+        outdir=tmp_path,
+        finite_key=None,
+        unblind=False,
+    )
+    report = json.loads((tmp_path / "reports" / "latest_experiment.json").read_text())
+    for key in ("schema_version", "mode", "timestamp_utc", "inputs", "units", "blinding", "block_results", "analysis", "artifacts"):
+        assert key in report
+    assert report["units"]["rep_rate_hz"] == "Hz"
+    assert report["units"]["block_seconds"] == "s"
+
+
+def test_forecast_blinded_no_labels_and_keys(tmp_path: Path):
+    forecasts_path = tmp_path / "forecasts.json"
+    forecasts_path.write_text(json.dumps([{
+        "forecast_id": "F2",
+        "timestamp_utc": "2026-01-03T00:00:00Z",
+        "window_id": "W000",
+        "metric_name": "headroom",
+        "operator": ">=",
+        "value": 0.0,
+    }]))
+    run_forecast_harness(
+        forecasts_path=str(forecasts_path),
+        outdir=tmp_path,
+        seed=3,
+        n_blocks=2,
+        block_seconds=10.0,
+        rep_rate_hz=1e6,
+        unblind=False,
+    )
+    blinded_path = tmp_path / "reports" / "forecast_blinded.json"
+    text = blinded_path.read_text()
+    assert "control" not in text
+    assert "intervention" not in text
+    output = json.loads(text)
     for key in ("schema_version", "mode", "inputs", "blinding", "windows", "outcomes", "scores", "summary"):
         assert key in output
 
