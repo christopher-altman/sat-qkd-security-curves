@@ -60,53 +60,105 @@ Quick run examples:
 
 ```
 .
-├─ src/sat_qkd_lab/
-│  ├─ run.py
-│  ├─ plotting.py
-│  ├─ attacks.py
-│  ├─ bb84.py
-│  ├─ basis_bias.py
-│  ├─ calibration.py
-│  ├─ calibration_fit.py
-│  ├─ change_points.py
-│  ├─ clock_sync.py
-│  ├─ coincidence.py
-│  ├─ constellation.py
-│  ├─ dashboard.py
-│  ├─ decoy_bb84.py
-│  ├─ detector.py
-│  ├─ eb_observables.py
-│  ├─ eb_qkd.py
-│  ├─ event_stream.py
-│  ├─ fading_samples.py
-│  ├─ fim_identifiability.py
-│  ├─ forecast.py
-│  ├─ forecast_harness.py
-│  ├─ free_space_link.py
-│  ├─ helpers.py
-│  ├─ hil_adapters.py
-│  ├─ link_budget.py
-│  ├─ optical_link.py
-│  ├─ optics.py
-│  ├─ ou_fading.py
-│  ├─ pass_model.py
-│  ├─ pointing.py
-│  ├─ polarization_drift.py
-│  ├─ scoring.py
-│  ├─ sweep.py
-│  ├─ telemetry.py
-│  ├─ timetags.py
-│  ├─ timing.py
-│  ├─ windows.py
-│  └─ __init__.py
-├─ tests/
-│  ├─ test_forecast_harness.py
-│  ├─ test_calibration_fit.py
-│  └─ ...
-├─ notebooks/
-├─ figures/
-├─ reports/
-└─ results/
+├── pyproject.toml
+├── README.md
+├── src
+│   ├── main.py
+│   └── sat_qkd_lab
+│       ├── __init__.py
+│       ├── attacks.py
+│       ├── background_process.py
+│       ├── basis_bias.py
+│       ├── bb84.py
+│       ├── calibration_fit.py
+│       ├── calibration.py
+│       ├── change_points.py
+│       ├── clock_sync.py
+│       ├── coincidence.py
+│       ├── constellation.py
+│       ├── dashboard.py
+│       ├── decoy_bb84.py
+│       ├── detector.py
+│       ├── eb_observables.py
+│       ├── eb_qkd.py
+│       ├── event_stream.py
+│       ├── experiment.py
+│       ├── fading_samples.py
+│       ├── fim_identifiability.py
+│       ├── finite_key.py
+│       ├── forecast_harness.py
+│       ├── forecast.py
+│       ├── free_space_link.py
+│       ├── helpers.py
+│       ├── hil_adapters.py
+│       ├── link_budget.py
+│       ├── optical_link.py
+│       ├── optics.py
+│       ├── ou_fading.py
+│       ├── pass_model.py
+│       ├── plotting.py
+│       ├── pointing.py
+│       ├── polarization_drift.py
+│       ├── run.py
+│       ├── scoring.py
+│       ├── sweep.py
+│       ├── telemetry.py
+│       ├── timetags.py
+│       ├── timing.py
+│       └── windows.py
+└── tests
+    ├── conftest.py
+    ├── test_adversary_system_realism.py
+    ├── test_attack_surfaces.py
+    ├── test_background_process.py
+    ├── test_basic.py
+    ├── test_basis_bias.py
+    ├── test_bb84_protocol.py
+    ├── test_bell_visibility_matrix.py
+    ├── test_calibration_fit.py
+    ├── test_calibration_model_card.py
+    ├── test_calibration_residual_diagnostics.py
+    ├── test_calibration.py
+    ├── test_change_points.py
+    ├── test_clock_sync.py
+    ├── test_constellation.py
+    ├── test_dashboard_helpers.py
+    ├── test_decoy_realism.py
+    ├── test_detector_attacks.py
+    ├── test_detector_effects.py
+    ├── test_eb_observables.py
+    ├── test_eb_pass_experiment.py
+    ├── test_engineering_outputs.py
+    ├── test_event_stream_pipeline.py
+    ├── test_fading_model.py
+    ├── test_fading_samples.py
+    ├── test_fdr_correction.py
+    ├── test_fim_identifiability.py
+    ├── test_finite_key_composable.py
+    ├── test_forecast_harness.py
+    ├── test_helpers_validation.py
+    ├── test_hil_adapters.py
+    ├── test_json_contract_stability.py
+    ├── test_link_coincidence.py
+    ├── test_motion_polarization_rotation.py
+    ├── test_optical_link_integration.py
+    ├── test_optics.py
+    ├── test_ou_fading.py
+    ├── test_parameter_validation.py
+    ├── test_pass_sweep_ou_fading.py
+    ├── test_pass_sweep_pulse_accounting.py
+    ├── test_plotting_headroom_and_sweep_engineering.py
+    ├── test_plotting_scale_settings.py
+    ├── test_pointing_dynamics.py
+    ├── test_polarization_drift.py
+    ├── test_property_based.py
+    ├── test_security_analysis.py
+    ├── test_sync_estimate_command.py
+    ├── test_sync_leakage_firewall.py
+    ├── test_timetag_coincidence.py
+    ├── test_timing_sync_layer.py
+    ├── test_timing_timetags.py
+    └── test_windows_experiment.py
 ```
 
 ## Problem
@@ -147,6 +199,33 @@ Realism primitives (units explicit): timing jitter σ is typically 10–200 ps f
 - **Dashboard:** install with `./py -m pip install -e ".[dashboard]"` and launch via `./py -m sat_qkd_lab.dashboard` (blinded by default).
 - **Outputs (selected, present in this checkout):** `reports/latest.json`, `reports/latest_pass.json`, `reports/latest_experiment.json`, `reports/latest_coincidence.json`, `reports/schedule_blinded.json`; figures include `figures/key_qber_vs_loss.png`, `figures/key_fraction_vs_loss.png`, `figures/qber_vs_loss_ci.png`, `figures/secret_fraction_vs_loss_ci.png`, `figures/qber_headroom_vs_loss.png`, `figures/key_rate_vs_elevation.png`, `figures/secure_window_per_pass.png`, `figures/loss_vs_elevation.png`, `figures/car_vs_loss.png`, `figures/chsh_s_vs_loss.png`, `figures/visibility_vs_loss.png`.
 - **JSON outputs (schema + stability):** outputs are append‑only, require explicit units where applicable, and blinded outputs contain no labels unless `--unblind`.
+- **Detector/background defaults (explicit):** the baseline detector model uses detection efficiency `eta = 0.2` and background/dark click probability `p_bg = 1e-4` *per pulse*. At high loss, background clicks dominate and QBER rises.
+- **Key-rate normalization (`key_rate_per_pulse`):** report the asymptotic rate normalized to *sent* pulses (sifting included via `n_sifted / n_sent`, typically ≈ 1/2):
+  ```
+  key_rate_per_pulse = (n_sifted / n_sent) × secret_fraction
+  ```
+- **Input validation helpers (post-parse):**
+  - `validate_int(name, value, min_value, max_value)` — integer bounds checking
+  - `validate_float(name, value, min_value, max_value, allow_nan, allow_inf)` — float bounds with NaN/inf control
+  - `validate_seed(seed)` — ensures seed is `None` or a non-negative integer  
+  Invalid inputs raise `ValueError` with the parameter name and invalid value.
+- **Abort handling (Monte Carlo aggregation semantics):** when QBER exceeds the abort threshold (default 11%), the protocol aborts and:
+  - `secret_fraction = 0.0` (no key extractable)
+  - `n_secret_est = 0`
+  - `key_rate_per_pulse = 0.0`  
+  This ensures aborted trials contribute zero to aggregated statistics.
+- **Finite-key math (toy-but-recognizable BB84 bound):** when finite-key mode is enabled, the analysis accounts for parameter-estimation uncertainty (Hoeffding-type), explicit ε-budgeting, and finite-size penalties:
+  ```
+  h2(q) = -q*log2(q) - (1-q)*log2(1-q), with q clamped into [1e-12, 1-1e-12]
+  delta = sqrt( ln(1/eps_pe) / (2*m_pe) )
+  qber_upper = min(0.5, q_hat + delta)
+
+  leak_ec_bits = f_ec * n_sifted * h2(qber_upper)
+  delta_eps_bits = 2*log2(2/eps_sec) + log2(2/eps_cor)
+  ell_bits = n_sifted * max(0, 1 - 2*h2(qber_upper)) - leak_ec_bits - delta_eps_bits
+  key_rate_per_pulse_finite = ell_bits / n_sent
+  ```
+
   ```json
   {
     "schema_version": "0.4",
@@ -179,6 +258,12 @@ Operators need to see where secrecy collapses long before it fails in the field.
 5. Gisin, N., Ribordy, G., Tittel, W., & Zbinden, H. (2002). [Quantum cryptography.](https://doi.org/10.1103/RevModPhys.74.145) *Reviews of Modern Physics*, *74*(1), 145–195. 
 
 6. Altman, C., Williams, C., Ursin, R., Villoresi, P., Sharma, V. [Astronaut Development and Deployment of a Secure Space Communications Network.](https://drive.google.com/file/d/0B99KWApna6GoX3JzZGMzbzNrMjg/view?resourcekey=0-b1lf7VUq8QmpRriVN5N2sw) NASA NIAC/OCT; DARPA QUINESS (Macroscopic Quantum Communications). 
+7. Tomamichel et al., "Tight finite-key analysis for quantum cryptography" (Nature Comm. 2012)
+
+8. Lim et al., "Concise security bounds for practical decoy-state QKD" (PRA 2014)
+
+9. Bourgoin et al., "Free-space QKD to a moving receiver" (NJP 2013)
+
 
 ## Citations
 
