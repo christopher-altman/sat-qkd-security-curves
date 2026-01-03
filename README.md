@@ -76,7 +76,17 @@ test -x .venv/bin/python || $PY -m venv .venv
 ./pytest -q
 ```
 
-## Repository layout
+Quick run examples:
+
+```bash
+./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 200000
+./py -m sat_qkd_lab.run pass-sweep --max-elevation 70 --pass-duration 300
+./py -m sat_qkd_lab.run experiment-run --n-blocks 20 --block-seconds 30 --outdir .
+./py -m sat_qkd_lab.run forecast-run --forecasts forecasts.json --outdir .
+./py -m sat_qkd_lab.run coincidence-sim --loss-min 20 --loss-max 60 --steps 9 --outdir .
+```
+
+## Layout
 
 ```
 .
@@ -84,359 +94,85 @@ test -x .venv/bin/python || $PY -m venv .venv
 │  ├─ run.py
 │  ├─ plotting.py
 │  ├─ attacks.py
-│  ├─ calibration.py
-│  ├─ calibration_fit.py
-│  ├─ coincidence.py
-│  ├─ eb_observables.py
-│  ├─ telemetry.py
-│  ├─ timetags.py
-│  ├─ timing.py
-│  ├─ clock_sync.py
-│  ├─ event_stream.py
-│  ├─ pass_model.py
-│  ├─ pointing.py
-│  ├─ optics.py
-│  ├─ ou_fading.py
-│  ├─ basis_bias.py
-│  ├─ fim_identifiability.py
-│  ├─ change_points.py
-│  ├─ constellation.py
-│  ├─ hil_adapters.py
-│  ├─ experiment.py
-│  ├─ forecast.py
-│  ├─ windows.py
-│  ├─ scoring.py
 │  ├─ eb_qkd.py
-│  ├─ finite_key.py
+│  ├─ pass_model.py
+│  ├─ experiment.py
+│  ├─ forecast_harness.py
+│  ├─ forecast.py
+│  ├─ timetags.py
+│  ├─ coincidence.py
+│  ├─ calibration_fit.py
+│  ├─ telemetry.py
+│  ├─ clock_sync.py
+│  ├─ background_process.py
+│  ├─ polarization_drift.py
+│  ├─ plotting.py
 │  ├─ dashboard.py
 │  └─ ...
 ├─ tests/
 │  ├─ test_forecast_harness.py
-│  ├─ test_eb_pass_experiment.py
-│  ├─ test_pass_sweep_pulse_accounting.py
-│  └─ test_basic.py
+│  ├─ test_calibration_fit.py
+│  └─ ...
 ├─ figures/
-│  ├─ key_rate_vs_elevation.png
-│  ├─ secure_window.png
-│  └─ qber_headroom_vs_loss.png
 ├─ reports/
-│  ├─ latest_pass.json
-│  ├─ latest_experiment.json
-│  └─ forecast_blinded.json
 └─ docs/
-   ├─ report-P9-ROB_EXPERIMENT_HARNESS.md
-   ├─ diff-P9-ROB_EXPERIMENT_HARNESS.md
-   ├─ report-P10-MPI_FORECAST_HARNESS.md
-   └─ diff-P10-MPI_FORECAST_HARNESS.md
 ```
 Notes: `docs/` contains local prompt artifacts and may be gitignored for archival only.
 
-## Command map
+## Problem
 
-```bash
-./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 200000
-./py -m sat_qkd_lab.run pass-sweep --max-elevation 70 --pass-duration 300
-./py -m sat_qkd_lab.run experiment-run --n-blocks 20 --block-seconds 30 --outdir .
-./py -m sat_qkd_lab.run forecast-run --forecasts forecasts.json --outdir .
-./py -m sat_qkd_lab.run calibration-fit --telemetry telemetry.json --outdir .
-./py -m sat_qkd_lab.run coincidence-sim --loss-min 20 --loss-max 60 --steps 9 --outdir .
-./py -m sat_qkd_lab.run constellation-sweep --n-sats 4 --n-stations 2 --outdir .
-./py -m sat_qkd_lab.run experiment-run --bell-mode --outdir .
-./py -m sat_qkd_lab.run experiment-run --ingest-tags tags.json --outdir .
-./py -m sat_qkd_lab.run clock-sync --outdir .
-./py -m sat_qkd_lab.run fading-ou --outdir .
-./py -m sat_qkd_lab.run basis-bias --outdir .
-```
+Satellite and fiber QKD systems live or die on a simple fact: bits can still flow while secrecy collapses. This repo models that security cliff and makes it visible before it becomes a system risk.
 
-Command outputs:
-- `sweep`: `reports/latest.json`, `figures/qber_headroom_vs_loss.png` (and attack comparisons if enabled).
-- `pass-sweep`: `reports/latest_pass.json`, `figures/key_rate_vs_elevation.png`, `figures/secure_window.png`.
-  - Phase 3 flags: `--fading` (lognormal), `--pointing` with `--acq-seconds`, `--dropout-prob`, `--relock-seconds`, `--pointing-jitter-urad`, plus `--filter-bandwidth-nm`, `--detector-temp-c`.
-- `pass-sweep` reports include anomaly incident cards derived from time-series change points.
-- `experiment-run`: `reports/latest_experiment.json` plus a blinded schedule in `reports/`.
-- `experiment-run --bell-mode`: adds coincidence matrices, visibility, and CHSH S in the report.
-- `experiment-run --ingest-tags`: ingests time-tag files (JSON/CSV) and adds HIL validation diffs.
-- `forecast-run`: `reports/forecast_blinded.json` (and `reports/forecast_unblinded.json` if `--unblind`).
-- `forecast-run --estimate-identifiability`: adds FIM condition number, covariance, and metric CIs.
-- `calibration-fit`: `reports/calibration_fit.json`, `reports/calibration_params.json`, `reports/latest_calibration_card.json`, `figures/calibration_quality_card.png`.
-- `coincidence-sim`: `reports/latest_coincidence.json`, `figures/car_vs_loss.png` (plus CHSH/visibility plots if enabled).
-  - Timing flags: `--clock-offset-s`, `--clock-drift-ppm`, `--tdc-ps`, `--estimate-offset`.
-  - Stream-mode flags: `--stream-mode`, `--gate-duty-cycle`, `--dead-time-ns`, `--afterpulse-prob`.
-- `constellation-sweep`: `reports/constellation_inventory.json`, `figures/inventory_timeseries.png`, `figures/inventory_flow.png`.
-- `clock-sync`: `reports/latest_clock_sync.json`, `figures/clock_sync_diagnostics.png`.
-- `fading-ou`: `reports/latest_fading_ou.json`, `figures/pass_fading_evolution.png`, `figures/secure_window_fragmentation.png`.
-- `basis-bias`: `reports/latest_basis_bias.json`, `figures/basis_bias_vs_elevation.png`.
+## Thesis
 
-## Outputs
+Security curves are only trustworthy if they respect instrument constraints. This lab ties link budgets, detector effects, and protocol thresholds into a single engineering picture.
 
-Reports are written under `reports/` (for example: `reports/latest.json`, `reports/latest_pass.json`, `reports/latest_experiment.json`, `reports/forecast_blinded.json`). Figures land under `figures/`. Headroom is defined as `qber_abort - qber_mean`.
+## Physics/Math Background
 
-Phase 3 outputs:
-- Coincidence artifacts: `reports/latest_coincidence.json`, `figures/car_vs_loss.png`, `figures/chsh_s_vs_loss.png`, `figures/visibility_vs_loss.png`.
-- Pointing/fading artifacts: `figures/pointing_lock_state.png`, `figures/transmittance_with_pointing.png`, `figures/eta_fading_samples.png`, `figures/secure_window_fading_impact.png`.
-- Optics/background parameters: `filter_bandwidth_nm`, `detector_temp_c`, and derived background rates in pass/coincidence reports.
-- Calibration outputs: `reports/calibration_fit.json` includes clock offset, pointing jitter proxy, and background rate when present.
-- Phase 5 diagnostics: `reports/latest_clock_sync.json`, `reports/latest_fading_ou.json`, `reports/latest_basis_bias.json`, `reports/latest_calibration_card.json`.
+Transmittance `η` is the probability a photon survives the channel and reaches the receiver.  
+QBER `e` is the bit error rate after sifting, so it captures the net disturbance of the link.  
+Binary entropy `h(e)` expresses uncertainty per bit (0 to 1), and it rises quickly with noise.  
+For BB84, the asymptotic secret fraction decreases as `e` grows and vanishes as `e → 0.5`.  
+That’s the security cliff: detections and sifted bits can remain nonzero while secrecy collapses.  
 
-Realism knobs (units):
-- Timing jitter σ [ps], coincidence window τc [ps], TDC resolution [ps], clock drift [ppm].
-- Filter bandwidth [nm], detector temperature [°C], pointing jitter [µrad].
+Abort headroom is `qber_abort − qber_mean`, the distance to the protocol’s error threshold.  
+CAR (coincidence‑to‑accidental ratio) is a signal‑quality witness in entanglement‑based QKD.  
+Link loss in dB maps to transmittance via `loss_db = −10 log10(η)`.  
+Satellite passes turn elevation into time‑varying loss and background noise.  
+Finite‑key bounds cap what can be claimed with limited samples, even when averages look good.  
 
-## Units & contract hygiene
+Realism primitives (units explicit): timing jitter σ is typically 10–200 ps for SPDs and stored in seconds in code; coincidence window τc is sub‑ns and stored in seconds; fading variance Var(T) captures heavy‑tailed free‑space optics where rare deep fades dominate.  
 
-Reports include explicit units (Hz, seconds, bits, bps, and °C where applicable). Blinded outputs never include group labels unless unblinding is enabled. JSON keys are append-only to keep downstream tooling stable.
+## Approach
 
-## Timing discipline (anti-self-deception)
+- Expected‑value BB84/EB‑QKD sweeps with finite‑key hooks.
+- Time‑tag coincidence simulation with sync discipline and detector effects.
+- Pass‑sweep models for elevation loss, pointing, fading, and background.
+- Calibration fitting with identifiability checks and uncertainty propagation.
+- Blinded experiment and forecast harnesses for protocol hygiene.
 
-Clock sync is estimated from beacons and then locked. Coincidence/QKD scoring should not tune offsets on the evaluation stream unless sync is locked, so tests reflect field behavior.
+## Capabilities
 
-## Calibration confidence hygiene
+- Blinded experiment runner: schedules blocks, stores blinded labels separately, and only reveals group analysis with `--unblind`.
+- Forecast‑run: scores precommitted forecast files; unblind toggles label visibility in outputs.
+- Calibration outputs: R², parameter uncertainty, FIM condition number, and an `identifiable` gate in reports.
+- Dashboard: Streamlit control panel. Install with `./py -m pip install -e ".[dashboard]"` and launch via `./py -m sat_qkd_lab.dashboard`.
+- Artifacts & provenance: each prompt writes `docs/report-P{N}-...` and `docs/diff-P{N}-...` with a verbatim `ls -l docs` gating proof.
 
-Identifiability here means the calibration fit is well-conditioned; if the Fisher information is near-singular, parameter estimates are not unique. Check the FIM condition number and covariance in `forecast-run --estimate-identifiability` outputs. If identifiability is weak, treat residuals as model uncertainty rather than effects.
+## Why it matters
 
-## Ops / inventory
+Operators need to see where secrecy collapses long before it fails in the field. This repo makes that cliff explicit and measurable.
 
-Constellation sweeps model key inventory (bits) over time, with production per pass and continuous consumption. Outputs are written to `reports/constellation_inventory.json` and plotted in `figures/inventory_timeseries.png` and `figures/inventory_flow.png`.
+## References
 
-## Hardware-in-the-loop
+- Liao et al., Nature 549, 43 (2017) — satellite QKD field results.
+- Bourgoin et al., NJP 15, 023006 (2013) — LEO QKD analysis framework.
 
-Use `experiment-run --ingest-tags tags.json` to ingest time-tag logs for validation. The report includes computed CAR/QBER from real tags plus diffs versus model expectations. This is a validation and calibration aid, not a security proof.
+## Contact
 
-## Optional dashboard
+https://www.christopheraltman.com
 
-Install: `./py -m pip install -e ".[dashboard]"`
-Launch: `./py -m sat_qkd_lab.dashboard`
-The dashboard reads/writes the latest reports and figures, including Phase 5 artifacts, and writes `reports/latest_dashboard.json` with a plot index. It is blinded by default; unblinding requires an explicit toggle.
-
-## Artifacts & provenance
-
-Each prompt writes `docs/report-P{N}-...` and `docs/diff-P{N}-...`. Reports include a verbatim `ls -l docs` gating proof for traceability.
-
-## Problem / Phenomenon Investigated
-
-Satellite and fibre Quantum Key Distribution (QKD) systems live or die on a simple fact: bits can still flow while secrecy collapses. This experiment creates a reproducible “security curve” lab: simulate BB84 under realistic loss/noise and a textbook intercept–resend attacker, then compute QBER and the asymptotic secret-key fraction.
-
-## Hypothesis or Construct
-
-If we model (i) channel loss in dB, (ii) intrinsic measurement noise, and (iii) a simple active attack, we should see a sharp operational threshold: QBER rises past a regime where privacy amplification can no longer extract a secret key, even if classical throughput remains nonzero.
-
-## Method
-
-- Where signal comes from: Monte Carlo simulation of BB84 prepare-and-measure, basis sifting, parameter estimation, and secret-fraction calculation.
-- Why this architecture/data was chosen: BB84 is the canonical QKD protocol; intercept–resend is the simplest attack with a visible QBER signature; dB loss is the lingua franca of link budgets (fibre and free-space).
-- What is being experimentally compared:
-  - no attack vs intercept–resend
-  - sweeps over loss_db and intrinsic flip_prob
-  - optional “satellite pass” mapping elevation angle → loss_db
-
-## Implementation
-
-- Python package under `/src/sat_qkd_lab`
-- CLI: `./py -m sat_qkd_lab.run <command> --help`
-- Requirements: `pyproject.toml` (numpy, matplotlib)
-
-### Features
-
-**Detector/Background Model** — The simulation includes a realistic detector model with:
-- `eta`: Detection efficiency (default 0.2)
-- `p_bg`: Background/dark click probability per pulse (default 1e-4)
-
-At high channel loss, background clicks dominate over signal clicks, causing QBER to approach 0.5. This models the operationally critical effect where the signal-to-noise ratio degrades.
-
-**Monte Carlo Confidence Intervals** — Run multiple trials per loss value to obtain uncertainty estimates:
-- `--trials N`: Number of independent trials (enables CI when N > 1)
-- `--workers N`: Parallel workers for faster execution
-- `--seed N`: Base random seed for reproducibility
-
-Outputs include mean, standard deviation, and 95% CI bounds for QBER, secret fraction, and key rate per pulse. CI bounds are clamped to physical ranges (e.g., QBER ≤ 0.5, key rate ≥ 0).
-
-**Key Rate Per Pulse** — The simulation now outputs `key_rate_per_pulse`, which properly accounts for the BB84 sifting factor (~1/2). This gives the asymptotic key rate normalized to sent pulses:
-```
-key_rate_per_pulse = (n_sifted / n_sent) × secret_fraction
-```
-
-**Decoy-State BB84** — The `decoy-sweep` command implements vacuum + weak decoy protocol:
-- Uses three intensities (signal, decoy, vacuum) to bound single-photon contributions
-- Computes asymptotic key rate using standard decoy-state bounds
-- Demonstrates PNS attack resilience (motivation for real satellite QKD)
-
-**Attack Surfaces (Toy Models)** — The `sweep` and `attack-sweep` commands can compare
-educational attack models beyond intercept-resend:
-- `pns`: Photon-number-splitting (reduces secrecy without adding QBER)
-- `time_shift`: Exploits basis-dependent efficiency mismatch
-- `blinding`: Forces clicks with loud/stealth modes
-
-Example comparison sweep:
-```bash
-./py -m sat_qkd_lab.run attack-sweep --attacks none intercept_resend pns \
-  --loss-min 20 --loss-max 55 --steps 8 --pulses 50000 --outdir .
-```
-This writes `figures/attack_comparison_key_rate.png`.
-
-**Link Budget** — The `link_budget.py` module is an **Option A scenario generator** that maps elevation angles to loss values for demonstration. It is *not* a physically accurate optical link model. See `optical_link.py` for documentation of what a proper Option B model would require.
-
-**Input Validation** — CLI arguments are validated post-parse with clear error messages:
-- `validate_int(name, value, min_value, max_value)` — Integer bounds checking
-- `validate_float(name, value, min_value, max_value, allow_nan, allow_inf)` — Float bounds with NaN/inf control
-- `validate_seed(seed)` — Ensures seed is None or non-negative integer
-
-Invalid inputs raise `ValueError` with the parameter name and invalid value.
-
-**Abort Handling** — When QBER exceeds the abort threshold (default 11%), the protocol aborts and:
-- `secret_fraction` is set to 0.0 (no key extractable)
-- `n_secret_est` is set to 0
-- `key_rate_per_pulse` returns 0.0
-
-This ensures aborted trials contribute zero to aggregated statistics.
-
-**Finite-Key Analysis** — The `--finite-key` flag enables finite-size security analysis using Hoeffding-type concentration bounds. This computes conservative secret key length estimates that account for statistical uncertainty in parameter estimation and explicit ε-budgeting:
-
-- `--eps-pe`: Parameter estimation failure probability (default 1e-10)
-- `--eps-sec`: Secrecy failure probability (default 1e-10)
-- `--eps-cor`: Correctness failure probability (default 1e-15)
-- `--ec-efficiency`: Error correction efficiency factor (default 1.16)
-- `--f-ec`: Alias for `--ec-efficiency`
-- `--pe-frac`: Fraction of sifted bits used for parameter estimation (default 0.5)
-- `--m-pe`: Explicit parameter estimation sample size (overrides `--pe-frac`)
-- `--n-sent`: Total pulses sent (overrides `--pulses` when set)
-- `--rep-rate` + `--pass-seconds`: Alternative pulse accounting, with `n_sent = rep_rate * pass_seconds`
-
-The finite-key rate is always ≤ the asymptotic rate, with the penalty decreasing as block size increases. The analysis uses:
-- Hoeffding bounds for QBER estimation uncertainty
-- Explicit error-correction leakage and ε-penalty terms
-- Total security parameter: `eps_total = eps_pe + eps_sec + eps_cor`
-
-Finite-key math (toy-but-recognizable BB84 bound):
-
-```
-h2(q) = -q*log2(q) - (1-q)*log2(1-q), with q clamped into [1e-12, 1-1e-12]
-delta = sqrt( ln(1/eps_pe) / (2*m_pe) )
-qber_upper = min(0.5, q_hat + delta)
-
-leak_ec_bits = f_ec * n_sifted * h2(qber_upper)
-delta_eps_bits = 2*log2(2/eps_sec) + log2(2/eps_cor)
-ell_bits = n_sifted * max(0, 1 - 2*h2(qber_upper)) - leak_ec_bits - delta_eps_bits
-key_rate_per_pulse_finite = ell_bits / n_sent
-```
-
-References:
-- Tomamichel et al., "Tight finite-key analysis for quantum cryptography" (Nature Comm. 2012)
-- Lim et al., "Concise security bounds for practical decoy-state QKD" (PRA 2014)
-
-**Free-Space Optical Link Model** — The `pass-sweep` command provides a physically-grounded free-space link budget for satellite-to-ground QKD:
-
-- **Diffraction/Coupling Model**: Gaussian beam propagation with diffraction-limited divergence (`θ = 1.22λ/D`) and receiver aperture coupling efficiency
-- **Pointing Error/Jitter**: Rayleigh-distributed angular error with configurable `--sigma-point` (default 2 µrad)
-- **Atmospheric Extinction**: Kasten-Young airmass formula with zenith loss scaling by elevation
-- **Turbulence/Scintillation**: Lognormal fading model (`--turbulence` flag, `--sigma-ln` parameter)
-- **Day/Night Background**: `--day` flag increases background noise by `--day-bg-factor` (default 100×)
-
-```bash
-# Night-time pass simulation (default)
-./py -m sat_qkd_lab.run pass-sweep --max-elevation 70 --pass-duration 300
-
-# Day-time pass with turbulence
-./py -m sat_qkd_lab.run pass-sweep --day --turbulence --sigma-ln 0.3
-
-# Custom optical parameters
-./py -m sat_qkd_lab.run pass-sweep --tx-diameter 0.15 --rx-diameter 0.5 --altitude 600e3
-```
-
-Outputs:
-- `figures/key_rate_vs_elevation.png` — Key rate vs elevation angle over pass
-- `figures/secure_window_per_pass.png` — Secure communication window timing
-- `figures/secure_window.png` — Finite-key secure window timing (pass-sweep schema)
-- `figures/loss_vs_elevation.png` — Total link loss vs elevation
-- `reports/latest.json` — Pass sweep results with secure window summary
-- `reports/latest_pass.json` — Pass sweep summary with finite-key bounds (schema v1.0)
-
-References:
-- Liao et al., "Satellite-to-ground quantum key distribution" (Nature 2017)
-- Bourgoin et al., "Free-space QKD to a moving receiver" (NJP 2013)
-
-**Entanglement-Based QKD (EB-QKD)** — The `sat_qkd_lab.eb_qkd` module adds a passive-basis EB-QKD expected-value harness with finite-key bounds using Hoeffding concentration. It reports `qber_upper`, `secret_fraction_finite`, and abort logic for conservative privacy amplification estimates.
-
-**Blinded Intervention Harness** — The `experiment-run` command generates a randomized A/B schedule with deterministic seeding and stores blinded schedules separately from optional unblinded labels. By default, the analysis block is blinded (group labels omitted) to support experimental hygiene without interpretive claims.
-
-**Forecast Harness** — The `forecast-run` command ingests external forecasts, scores them against deterministic window outcomes, and writes blinded reports by default. Forecast scoring compares predicted thresholds or directional claims to measured metrics.
-
-```bash
-# Blinded forecast scoring
-./py -m sat_qkd_lab.run forecast-run --forecasts forecasts.json --outdir .
-
-# Unblinded scoring with group labels
-./py -m sat_qkd_lab.run forecast-run --forecasts forecasts.json --outdir . --unblind
-```
-
-### Simulator API
-
-The core simulation functions are:
-- `sat_qkd_lab.bb84.simulate_bb84()` — Single-photon BB84 Monte Carlo simulation
-- `sat_qkd_lab.decoy_bb84.simulate_decoy_bb84()` — Decoy-state BB84 with vacuum + weak decoy
-- `sat_qkd_lab.free_space_link.total_link_loss_db()` — Free-space link loss from elevation angle
-- `sat_qkd_lab.sweep.sweep_pass()` — Satellite pass simulation with free-space link model
-
-Both return structured results with QBER, secret fraction, and key rate metrics.
-
-### Example Commands
-
-```bash
-# Single-trial BB84 sweep (fast)
-./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21
-
-# BB84 sweep with detector model and CI (10 trials per point)
-./py -m sat_qkd_lab.run sweep --trials 10 --eta 0.2 --p-bg 1e-4
-
-# Decoy-state BB84 sweep
-./py -m sat_qkd_lab.run decoy-sweep --loss-min 20 --loss-max 50 --steps 16
-
-# Decoy realism: intensity noise + afterpulsing + dead time + eta mismatch
-./py -m sat_qkd_lab.run decoy-sweep --loss-min 20 --loss-max 50 --steps 16 \
-  --mu-sigma 0.02 --decoy-mu-sigma 0.01 \
-  --afterpulse-prob 0.02 --afterpulse-window 3 \
-  --dead-time-pulses 5 --eta-z 0.22 --eta-x 0.18
-
-# Finite-key analysis sweep
-./py -m sat_qkd_lab.run sweep --finite-key --pulses 500000 --eps-pe 1e-10 --eps-sec 1e-10
-
-# Finite-key rate vs total pulses (uses representative loss point)
-./py -m sat_qkd_lab.run sweep --finite-key --rep-rate 1e7 --pass-seconds 30
-
-# Free-space satellite pass sweep (night-time)
-./py -m sat_qkd_lab.run pass-sweep --max-elevation 60 --pass-duration 300
-
-# Free-space pass with turbulence and day-time background
-./py -m sat_qkd_lab.run pass-sweep --day --turbulence --sigma-ln 0.3
-```
-
-### Engineering Outputs
-
-The simulator provides hardware-relevant metrics for system planning:
-
-**Bits per second and total bits per pass:**
-```bash
-# Compute key rate in bps and total secret bits for a 300s pass at 100 MHz rep rate
-./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 50 --steps 16 \
-  --rep-rate-hz 1e8 --pass-seconds 300
-```
-This adds `key_rate_bps` and `total_secret_bits` fields to the JSON output.
-
-**Required repetition rate to hit a target key volume:**
-```bash
-# Compute required rep rate to generate 1 million secret bits in a 300s pass
-./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 50 --steps 16 \
-  --target-bits 1000000 --pass-seconds 300
-```
-This adds `required_rep_rate_hz` to the JSON output. If `key_rate_per_pulse <= 0`, the output is `"inf"` with a note explaining the condition cannot be met.
-
-**Security headroom (QBER margin to abort threshold):**
-
-All sweeps now include `headroom` fields in the JSON output and generate `figures/qber_headroom_vs_loss.png`. Headroom is defined as:
-- `headroom = qber_abort - qber_mean`
-
-For multi-trial sweeps with confidence intervals:
-- `headroom_ci_low = qber_abort - qber_ci_high` (conservative)
-- `headroom_ci_high = qber_abort - qber_ci_low` (optimistic)
+Christopher Altman (2026)
 
 Units are absolute QBER (e.g., headroom = 0.05 means 5% margin to the 11% abort threshold).
 
