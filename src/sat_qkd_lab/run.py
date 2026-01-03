@@ -1914,6 +1914,28 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
             str(outdir / "figures" / "background_rate_vs_time.png"),
         )
         print("Plot:", bg_plot_path)
+        background_report = {
+            "schema_version": "1.0",
+            "mode": "background-process",
+            "timestamp_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "source": "pass-sweep",
+            "inputs": {
+                "mean": float(args.bg_ou_mean),
+                "sigma": float(args.bg_ou_sigma),
+                "tau_seconds": float(args.bg_ou_tau_s),
+                "seed": int(args.bg_ou_seed),
+                "rep_rate_hz": float(rep_rate_hz),
+            },
+            "time_series": {
+                "t_seconds": [float(t) for t in time_s],
+                "background_rate_hz": [float(v) for v in bg_rate_series],
+            },
+        }
+        background_report_path = outdir / "reports" / "latest_background_process.json"
+        with open(background_report_path, "w") as f:
+            json.dump(background_report, f, indent=2)
+            f.write("\n")
+        print("Wrote:", background_report_path)
     if (args.pol_drift or args.pol_rotation) and polarization_raw is not None:
         corrected_deg = None
         if polarization_angle is not None and polarization_angle is not polarization_raw:
@@ -2571,6 +2593,29 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
             str(outdir / "figures" / "car_vs_time.png"),
         )
         print("Plot:", car_plot_path)
+        background_report = {
+            "schema_version": "1.0",
+            "mode": "background-process",
+            "timestamp_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "source": "coincidence-sim",
+            "inputs": {
+                "mean": float(args.bg_ou_mean),
+                "sigma": float(args.bg_ou_sigma),
+                "tau_seconds": float(args.bg_ou_tau_s),
+                "seed": int(args.bg_ou_seed),
+                "base_background_rate_hz": float(base_bg_rate),
+            },
+            "time_series": {
+                "t_seconds": [float(t) for t in time_series],
+                "background_rate_hz": [float(v) for v in background_rate_series],
+                "car": [float(r["car"]) for r in records],
+            },
+        }
+        background_report_path = outdir / "reports" / "latest_background_process.json"
+        with open(background_report_path, "w") as f:
+            json.dump(background_report, f, indent=2)
+            f.write("\n")
+        print("Wrote:", background_report_path)
     lock_plot_path = plot_sync_lock_state(
         duration_s=float(args.duration),
         locked=sync_locked,

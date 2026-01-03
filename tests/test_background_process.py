@@ -43,3 +43,7 @@ def test_background_process_degrades_car(tmp_path: Path):
         ["--background-process", "--bg-ou-mean", "5.0", "--bg-ou-sigma", "0.0"],
     )
     assert scaled["summary"]["mean_car"] <= base["summary"]["mean_car"]
+    bg_report_path = tmp_path / "scaled" / "reports" / "latest_background_process.json"
+    assert bg_report_path.exists()
+    bg_payload = json.loads(bg_report_path.read_text())
+    assert bg_payload["source"] == "coincidence-sim"
