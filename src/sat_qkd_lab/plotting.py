@@ -1151,6 +1151,24 @@ def plot_polarization_drift_vs_time(
     return out_path
 
 
+def plot_compensation_residuals(
+    time_s: np.ndarray,
+    residual_deg: np.ndarray,
+    out_path: str,
+) -> str:
+    """
+    Plot compensation residuals over time.
+    """
+    fig, ax = plt.subplots()
+    ax.plot(time_s, residual_deg, color="tab:purple")
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Residual (deg)")
+    ax.set_title("Compensation residuals")
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    return out_path
+
+
 def plot_decoy_comparison(
     records_bb84: Sequence[Dict[str, Any]],
     records_decoy: Sequence[Dict[str, Any]],
