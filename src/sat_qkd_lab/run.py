@@ -410,6 +410,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Path to time-tag file for HIL validation")
     ex.add_argument("--ingest-tau-ps", type=float, default=200.0,
                     help="Coincidence window for HIL playback (ps)")
+    ex.add_argument("--sync-params", type=str, default=None,
+                    help="Path to sync_params.json for locked scoring")
     ex.add_argument("--unblind", action="store_true",
                     help="Write unblinded schedule and include group analysis")
     ex.add_argument("--outdir", type=str, default=".",
@@ -425,6 +427,8 @@ def build_parser() -> argparse.ArgumentParser:
     fr.add_argument("--n-blocks", type=int, default=20)
     fr.add_argument("--block-seconds", type=float, default=30.0)
     fr.add_argument("--rep-rate-hz", type=float, default=1e8)
+    fr.add_argument("--sync-params", type=str, default=None,
+                    help="Path to sync_params.json for locked scoring")
     fr.add_argument("--unblind", action="store_true",
                     help="Write unblinded forecast analysis output")
     fr.add_argument("--estimate-identifiability", action="store_true",
@@ -476,6 +480,17 @@ def build_parser() -> argparse.ArgumentParser:
     clk.add_argument("--seed", type=int, default=0)
     clk.add_argument("--outdir", type=str, default=".",
                      help="Output directory for reports/figures (default: .)")
+
+    # --- sync-estimate command ---
+    se = sub.add_parser("sync-estimate", help="Estimate sync params from beacon stream.")
+    se.add_argument("--duration-s", type=float, default=10.0)
+    se.add_argument("--rate-hz", type=float, default=1e3)
+    se.add_argument("--offset-s", type=float, default=5e-9)
+    se.add_argument("--drift-ppm", type=float, default=2.0)
+    se.add_argument("--jitter-ps", type=float, default=20.0)
+    se.add_argument("--seed", type=int, default=0)
+    se.add_argument("--outdir", type=str, default=".",
+                    help="Output directory for reports (default: .)")
 
     # --- fading-ou command ---
     fou = sub.add_parser("fading-ou", help="Simulate OU fading evolution during a pass.")
@@ -601,6 +616,8 @@ def main() -> None:
         _run_constellation_sweep(args)
     elif args.cmd == "clock-sync":
         _run_clock_sync(args)
+    elif args.cmd == "sync-estimate":
+        _run_sync_estimate(args)
     elif args.cmd == "fading-ou":
         _run_fading_ou(args)
     elif args.cmd == "basis-bias":
@@ -769,6 +786,8 @@ def _validate_args(args: argparse.Namespace) -> None:
         validate_float("ingest-tau-ps", args.ingest_tau_ps, min_value=1e-6)
         if args.ingest_tags is not None and not Path(args.ingest_tags).exists():
             raise FileNotFoundError(f"Time-tag file not found: {args.ingest_tags}")
+        if args.sync_params is not None and not Path(args.sync_params).exists():
+            raise FileNotFoundError(f"Sync params file not found: {args.sync_params}")
     elif args.cmd == "forecast-run":
         validate_seed(args.seed)
         validate_int("n-blocks", args.n_blocks, min_value=1)
@@ -777,6 +796,8 @@ def _validate_args(args: argparse.Namespace) -> None:
         validate_float("fdr-alpha", args.fdr_alpha, min_value=0.0, max_value=1.0)
         if not Path(args.forecasts).exists():
             raise FileNotFoundError(f"Forecasts file not found: {args.forecasts}")
+        if args.sync_params is not None and not Path(args.sync_params).exists():
+            raise FileNotFoundError(f"Sync params file not found: {args.sync_params}")
     elif args.cmd == "coincidence-sim":
         validate_float("loss-min", args.loss_min, min_value=0.0)
         validate_float("loss-max", args.loss_max, min_value=0.0)
@@ -834,6 +855,11 @@ def _validate_args(args: argparse.Namespace) -> None:
         validate_float("consumption-bps", args.consumption_bps, min_value=0.0)
         validate_seed(args.seed)
     elif args.cmd == "clock-sync":
+        validate_float("duration-s", args.duration_s, min_value=1e-6)
+        validate_float("rate-hz", args.rate_hz, min_value=1e-9)
+        validate_float("offset-s", args.offset_s)
+        validate_float("drift-ppm", args.drift_ppm)
+    elif args.cmd == "sync-estimate":
         validate_float("duration-s", args.duration_s, min_value=1e-6)
         validate_float("rate-hz", args.rate_hz, min_value=1e-9)
         validate_float("offset-s", args.offset_s)
@@ -2145,6 +2171,7 @@ def _run_experiment(args: argparse.Namespace) -> None:
         finite_key=finite_key_params,
         bell_mode=args.bell_mode,
         unblind=args.unblind,
+        sync_params_path=args.sync_params,
     )
     if args.ingest_tags is not None:
         tags_a, tags_b = ingest_timetag_file(args.ingest_tags)
@@ -2187,6 +2214,7 @@ def _run_forecast_run(args: argparse.Namespace) -> None:
         block_seconds=args.block_seconds,
         rep_rate_hz=args.rep_rate_hz,
         unblind=args.unblind,
+        sync_params_path=args.sync_params,
         estimate_identifiability=args.estimate_identifiability,
         fdr_enabled=args.fdr,
         fdr_alpha=args.fdr_alpha,
@@ -2845,6 +2873,31 @@ def _run_clock_sync(args: argparse.Namespace) -> None:
         f.write("\n")
     print("Wrote:", report_path)
     print("Wrote:", sync_params_path)
+
+
+def _run_sync_estimate(args: argparse.Namespace) -> None:
+    """Estimate sync params from a beacon stream and write frozen params."""
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    (outdir / "reports").mkdir(exist_ok=True)
+
+    jitter_sigma_s = args.jitter_ps * 1e-12
+    times_a = generate_beacon_times(
+        duration_s=args.duration_s,
+        rate_hz=args.rate_hz,
+        jitter_sigma_s=jitter_sigma_s,
+        seed=args.seed,
+    )
+    times_b = apply_clock_model(times_a, args.offset_s, args.drift_ppm)
+    if jitter_sigma_s > 0:
+        rng = np.random.default_rng(args.seed + 1)
+        times_b = times_b + rng.normal(0.0, jitter_sigma_s, size=times_b.size)
+
+    sync = estimate_offset_drift(times_a, times_b)
+    params = SyncParams(offset_s=sync.offset_s, drift_ppm=sync.drift_ppm, source="beacon")
+    report_path = outdir / "reports" / "latest_sync_params.json"
+    write_sync_params(str(report_path), params)
+    print("Wrote:", report_path)
 
 
 def _run_fading_ou(args: argparse.Namespace) -> None:
