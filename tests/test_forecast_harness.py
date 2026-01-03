@@ -149,3 +149,33 @@ def test_forecast_harness_identifiability_outputs(tmp_path: Path):
     metrics = output["uncertainty"]["metrics"]
     assert "key_rate_bps" in metrics
     assert "headroom" in metrics
+
+
+def test_forecast_harness_fdr_outputs(tmp_path: Path):
+    payload = [
+        {
+            "forecast_id": "F001",
+            "timestamp_utc": "2026-01-03T00:00:00Z",
+            "window_id": "W000",
+            "metric_name": "headroom",
+            "operator": ">=",
+            "value": 0.0,
+        }
+    ]
+    path = tmp_path / "forecasts.json"
+    path.write_text(json.dumps(payload))
+
+    output = run_forecast_harness(
+        forecasts_path=str(path),
+        outdir=tmp_path,
+        seed=4,
+        n_blocks=2,
+        block_seconds=10.0,
+        rep_rate_hz=1e6,
+        unblind=False,
+        fdr_enabled=True,
+        fdr_alpha=0.1,
+    )
+    assert output["fdr"]["enabled"] is True
+    assert output["scores"][0]["q_value"] is not None
+    assert output["scores"][0]["p_value"] is not None

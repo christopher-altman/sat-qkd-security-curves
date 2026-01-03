@@ -16,7 +16,7 @@ from .pass_model import PassModelParams, compute_pass_records
 from .detector import DEFAULT_DETECTOR, DetectorParams
 from .fim_identifiability import compute_fim_identifiability, propagate_uncertainty
 from .telemetry import TelemetryRecord
-from .scoring import robust_z_score, score_forecast
+from .scoring import robust_z_score, score_forecast, two_sided_p_value, bh_fdr
 from .windows import generate_windows, assign_groups_blinded
 
 
@@ -64,6 +64,8 @@ def run_forecast_harness(
     rep_rate_hz: float,
     unblind: bool,
     estimate_identifiability: bool = False,
+    fdr_enabled: bool = False,
+    fdr_alpha: float = 0.1,
 ) -> Dict[str, Any]:
     """Run forecast harness and write blinded/unblinded reports."""
     forecasts = load_forecasts(forecasts_path)
@@ -154,6 +156,17 @@ def run_forecast_harness(
             "z_score_robust": z_score,
         })
 
+    p_values = [
+        two_sided_p_value(s["z_score_robust"])
+        if s.get("z_score_robust") is not None else None
+        for s in scores
+    ]
+    q_values = bh_fdr(p_values, fdr_alpha) if fdr_enabled else [None for _ in scores]
+    for score, p_val, q_val in zip(scores, p_values, q_values):
+        score["p_value"] = p_val
+        score["q_value"] = q_val
+        score["fdr_pass"] = bool(q_val is not None and q_val <= fdr_alpha) if fdr_enabled else None
+
     hits = [s["hit"] for s in scores if s["hit"] is not None]
     n_hits = sum(1 for h in hits if h)
     summary = {
@@ -173,6 +186,8 @@ def run_forecast_harness(
             "forecasts_path": str(forecasts_path),
             "unblind": bool(unblind),
             "estimate_identifiability": bool(estimate_identifiability),
+            "fdr_enabled": bool(fdr_enabled),
+            "fdr_alpha": float(fdr_alpha),
         },
         "blinding": {
             "blinded": True,
@@ -186,6 +201,12 @@ def run_forecast_harness(
         "scores": scores,
         "summary": summary,
     }
+    if fdr_enabled:
+        output["fdr"] = {
+            "enabled": True,
+            "alpha": float(fdr_alpha),
+            "method": "benjamini_hochberg",
+        }
 
     if estimate_identifiability and pass_records:
         telemetry_records = [

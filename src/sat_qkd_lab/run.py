@@ -429,6 +429,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Write unblinded forecast analysis output")
     fr.add_argument("--estimate-identifiability", action="store_true",
                     help="Estimate calibration identifiability and uncertainty")
+    fr.add_argument("--fdr", action="store_true",
+                    help="Enable Benjamini-Hochberg FDR correction")
+    fr.add_argument("--fdr-alpha", type=float, default=0.1,
+                    help="FDR alpha threshold (default: 0.1)")
 
     # --- calibration-fit command ---
     cf = sub.add_parser("calibration-fit", help="Fit detector parameters from telemetry.")
@@ -768,6 +772,7 @@ def _validate_args(args: argparse.Namespace) -> None:
         validate_int("n-blocks", args.n_blocks, min_value=1)
         validate_float("block-seconds", args.block_seconds, min_value=1e-9)
         validate_float("rep-rate-hz", args.rep_rate_hz, min_value=1e-9)
+        validate_float("fdr-alpha", args.fdr_alpha, min_value=0.0, max_value=1.0)
         if not Path(args.forecasts).exists():
             raise FileNotFoundError(f"Forecasts file not found: {args.forecasts}")
     elif args.cmd == "coincidence-sim":
@@ -2181,6 +2186,8 @@ def _run_forecast_run(args: argparse.Namespace) -> None:
         rep_rate_hz=args.rep_rate_hz,
         unblind=args.unblind,
         estimate_identifiability=args.estimate_identifiability,
+        fdr_enabled=args.fdr,
+        fdr_alpha=args.fdr_alpha,
     )
     print("Wrote:", outdir / "reports" / "forecast_blinded.json")
     if args.unblind:
