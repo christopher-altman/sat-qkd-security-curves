@@ -47,6 +47,11 @@ from .detector import DetectorParams, DEFAULT_DETECTOR
 from .decoy_bb84 import DecoyParams, sweep_decoy_loss
 from .attacks import Attack, AttackConfig
 from .calibration import CalibrationModel
+from .telemetry import load_telemetry
+from .calibration_fit import (
+    fit_telemetry_parameters,
+    predict_with_uncertainty,
+)
 from .pass_model import (
     PassModelParams,
     FadingParams,
@@ -328,6 +333,22 @@ def build_parser() -> argparse.ArgumentParser:
     fr.add_argument("--unblind", action="store_true",
                     help="Write unblinded forecast analysis output")
 
+    # --- calibration-fit command ---
+    cf = sub.add_parser("calibration-fit", help="Fit detector parameters from telemetry.")
+    cf.add_argument("--telemetry", type=str, required=True,
+                    help="Path to telemetry JSON/CSV")
+    cf.add_argument("--eta-base", type=float, default=DEFAULT_DETECTOR.eta,
+                    help="Base detector efficiency for fitting")
+    cf.add_argument("--p-bg-min", type=float, default=1e-6)
+    cf.add_argument("--p-bg-max", type=float, default=5e-3)
+    cf.add_argument("--flip-min", type=float, default=0.0)
+    cf.add_argument("--flip-max", type=float, default=0.05)
+    cf.add_argument("--eta-scale-min", type=float, default=0.5)
+    cf.add_argument("--eta-scale-max", type=float, default=1.0)
+    cf.add_argument("--grid-steps", type=int, default=12)
+    cf.add_argument("--outdir", type=str, default=".",
+                    help="Output directory for reports (default: .)")
+
     # --- coincidence-sim command ---
     cs = sub.add_parser("coincidence-sim", help="Simulate time-tagged coincidences and CAR vs loss.")
     cs.add_argument("--loss-min", type=float, default=20.0)
@@ -383,6 +404,8 @@ def main() -> None:
         _run_forecast_run(args)
     elif args.cmd == "coincidence-sim":
         _run_coincidence_sim(args)
+    elif args.cmd == "calibration-fit":
+        _run_calibration_fit(args)
 
 
 def _validate_args(args: argparse.Namespace) -> None:
@@ -551,6 +574,23 @@ def _validate_args(args: argparse.Namespace) -> None:
         validate_seed(args.seed)
         validate_float("min-visibility", args.min_visibility, min_value=0.0, max_value=1.0)
         validate_float("min-chsh-s", args.min_chsh_s, min_value=0.0)
+    elif args.cmd == "calibration-fit":
+        if not Path(args.telemetry).exists():
+            raise FileNotFoundError(f"Telemetry file not found: {args.telemetry}")
+        validate_float("eta-base", args.eta_base, min_value=0.0, max_value=1.0)
+        validate_float("p-bg-min", args.p_bg_min, min_value=0.0, max_value=1.0)
+        validate_float("p-bg-max", args.p_bg_max, min_value=0.0, max_value=1.0)
+        validate_float("flip-min", args.flip_min, min_value=0.0, max_value=0.5)
+        validate_float("flip-max", args.flip_max, min_value=0.0, max_value=0.5)
+        validate_float("eta-scale-min", args.eta_scale_min, min_value=0.0, max_value=1.0)
+        validate_float("eta-scale-max", args.eta_scale_max, min_value=0.0, max_value=1.0)
+        validate_int("grid-steps", args.grid_steps, min_value=2)
+        if args.p_bg_min > args.p_bg_max:
+            raise ValueError("p-bg-min must be <= p-bg-max")
+        if args.flip_min > args.flip_max:
+            raise ValueError("flip-min must be <= flip-max")
+        if args.eta_scale_min > args.eta_scale_max:
+            raise ValueError("eta-scale-min must be <= eta-scale-max")
 
 
 def _resolve_n_sent_for_sweep(args: argparse.Namespace) -> int:
@@ -1728,6 +1768,72 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
     }
 
     report_path = outdir / "reports" / "latest_coincidence.json"
+    with open(report_path, "w") as f:
+        json.dump(report, f, indent=2)
+        f.write("\n")
+    print("Wrote:", report_path)
+
+
+def _run_calibration_fit(args: argparse.Namespace) -> None:
+    """Execute telemetry calibration fitting workflow."""
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    (outdir / "reports").mkdir(exist_ok=True)
+
+    records = load_telemetry(args.telemetry)
+
+    p_bg_grid = np.linspace(args.p_bg_min, args.p_bg_max, args.grid_steps)
+    flip_grid = np.linspace(args.flip_min, args.flip_max, args.grid_steps)
+    eta_scale_grid = np.linspace(args.eta_scale_min, args.eta_scale_max, args.grid_steps)
+
+    fit = fit_telemetry_parameters(
+        records=records,
+        eta_base=args.eta_base,
+        p_bg_grid=p_bg_grid,
+        flip_grid=flip_grid,
+        eta_scale_grid=eta_scale_grid,
+    )
+
+    predicted = predict_with_uncertainty(records, fit, args.eta_base)
+
+    params_output = {
+        "eta_base": args.eta_base,
+        "eta_scale": fit.eta_scale,
+        "p_bg": fit.p_bg,
+        "flip_prob": fit.flip_prob,
+        "rmse": fit.rmse,
+        "residual_std": fit.residual_std,
+    }
+
+    params_path = outdir / "reports" / "calibration_params.json"
+    with open(params_path, "w") as f:
+        json.dump(params_output, f, indent=2)
+        f.write("\n")
+    print("Wrote:", params_path)
+
+    report = {
+        "schema_version": "1.0",
+        "mode": "calibration-fit",
+        "timestamp_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "inputs": {
+            "telemetry_path": args.telemetry,
+            "eta_base": args.eta_base,
+            "p_bg_min": args.p_bg_min,
+            "p_bg_max": args.p_bg_max,
+            "flip_min": args.flip_min,
+            "flip_max": args.flip_max,
+            "eta_scale_min": args.eta_scale_min,
+            "eta_scale_max": args.eta_scale_max,
+            "grid_steps": args.grid_steps,
+        },
+        "fit": params_output,
+        "predicted": predicted,
+        "artifacts": {
+            "calibration_params": "reports/calibration_params.json",
+        },
+    }
+
+    report_path = outdir / "reports" / "calibration_fit.json"
     with open(report_path, "w") as f:
         json.dump(report, f, indent=2)
         f.write("\n")
