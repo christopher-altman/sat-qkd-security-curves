@@ -743,6 +743,54 @@ def plot_car_vs_loss(
     return out_path
 
 
+def plot_chsh_s_vs_loss(
+    records: Sequence[Dict[str, Any]],
+    out_path: str,
+) -> str:
+    """
+    Plot CHSH S vs loss.
+    """
+    loss = _extract(records, "loss_db")
+    s_vals = _extract(records, "chsh_s")
+
+    fig, ax = plt.subplots()
+    ax.plot(loss, s_vals, marker="o", markersize=3)
+    ax.axhline(2.0, color="red", linestyle="--", linewidth=1, label="Classical bound")
+    ax.set_xlabel("Channel loss (dB)")
+    ax.set_ylabel("CHSH S")
+    ax.set_title("CHSH S vs loss")
+    ax.legend()
+    ax.set_ylim(bottom=0)
+
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+
+    return out_path
+
+
+def plot_visibility_vs_loss(
+    records: Sequence[Dict[str, Any]],
+    out_path: str,
+) -> str:
+    """
+    Plot visibility vs loss.
+    """
+    loss = _extract(records, "loss_db")
+    vis = _extract(records, "visibility")
+
+    fig, ax = plt.subplots()
+    ax.plot(loss, vis, marker="o", markersize=3)
+    ax.set_xlabel("Channel loss (dB)")
+    ax.set_ylabel("Visibility")
+    ax.set_title("Visibility vs loss")
+    ax.set_ylim(bottom=0, top=1.0)
+
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+
+    return out_path
+
+
 def plot_decoy_comparison(
     records_bb84: Sequence[Dict[str, Any]],
     records_decoy: Sequence[Dict[str, Any]],

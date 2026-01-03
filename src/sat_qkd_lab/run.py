@@ -37,6 +37,8 @@ from .plotting import (
     plot_attack_comparison_key_rate,
     plot_qber_headroom_vs_loss,
     plot_car_vs_loss,
+    plot_chsh_s_vs_loss,
+    plot_visibility_vs_loss,
 )
 from .free_space_link import FreeSpaceLinkParams, generate_elevation_profile
 from .detector import DetectorParams, DEFAULT_DETECTOR
@@ -48,6 +50,7 @@ from .experiment import ExperimentParams, run_experiment
 from .forecast_harness import run_forecast_harness
 from .timetags import generate_pair_time_tags, generate_background_time_tags, merge_time_tags
 from .coincidence import match_coincidences
+from .eb_observables import compute_observables
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -320,6 +323,10 @@ def build_parser() -> argparse.ArgumentParser:
     cs.add_argument("--seed", type=int, default=0)
     cs.add_argument("--outdir", type=str, default=".",
                     help="Output directory for figures/reports (default: .)")
+    cs.add_argument("--min-visibility", type=float, default=0.0,
+                    help="Abort if visibility below this threshold")
+    cs.add_argument("--min-chsh-s", type=float, default=2.0,
+                    help="Abort if CHSH S below this threshold")
 
     return p
 
@@ -503,6 +510,8 @@ def _validate_args(args: argparse.Namespace) -> None:
         validate_float("jitter-ps", args.jitter_ps, min_value=0.0)
         validate_float("tau-ps", args.tau_ps, min_value=1e-9)
         validate_seed(args.seed)
+        validate_float("min-visibility", args.min_visibility, min_value=0.0, max_value=1.0)
+        validate_float("min-chsh-s", args.min_chsh_s, min_value=0.0)
 
 
 def _resolve_n_sent_for_sweep(args: argparse.Namespace) -> int:
@@ -1521,12 +1530,28 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
         tags_b = merge_time_tags(sig_b, bg_b)
 
         result = match_coincidences(tags_a, tags_b, tau_seconds=tau_s)
+        obs = compute_observables(
+            correlation_counts={
+                "AB": result.matrices["Z"],
+                "ABp": result.matrices["X"],
+                "ApB": result.matrices["Z"],
+                "ApBp": result.matrices["X"],
+            },
+            n_pairs=max(1, n_pairs),
+            min_visibility=args.min_visibility,
+            min_chsh_s=args.min_chsh_s,
+        )
         records.append({
             "loss_db": float(loss_db),
             "coincidences": int(result.coincidences),
             "accidentals": int(result.accidentals),
             "car": float(result.car),
             "matrices": result.matrices,
+            "visibility": float(obs.visibility),
+            "chsh_s": float(obs.chsh_s),
+            "chsh_sigma": float(obs.chsh_sigma),
+            "correlations": obs.correlations,
+            "aborted": bool(obs.aborted),
         })
 
     plot_path = plot_car_vs_loss(
@@ -1534,11 +1559,23 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
         str(outdir / "figures" / "car_vs_loss.png"),
     )
     print("Plot:", plot_path)
+    chsh_plot_path = plot_chsh_s_vs_loss(
+        records,
+        str(outdir / "figures" / "chsh_s_vs_loss.png"),
+    )
+    print("Plot:", chsh_plot_path)
+    vis_plot_path = plot_visibility_vs_loss(
+        records,
+        str(outdir / "figures" / "visibility_vs_loss.png"),
+    )
+    print("Plot:", vis_plot_path)
 
     cars = [r["car"] for r in records if np.isfinite(r["car"])]
     summary = {
         "max_car": float(max(cars)) if cars else 0.0,
         "mean_car": float(np.mean(cars)) if cars else 0.0,
+        "min_visibility": args.min_visibility,
+        "min_chsh_s": args.min_chsh_s,
     }
 
     report = {
@@ -1560,6 +1597,8 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
         "summary": summary,
         "artifacts": {
             "car_plot": "figures/car_vs_loss.png",
+            "chsh_plot": "figures/chsh_s_vs_loss.png",
+            "visibility_plot": "figures/visibility_vs_loss.png",
         },
     }
 

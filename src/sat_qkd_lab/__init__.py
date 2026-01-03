@@ -19,6 +19,7 @@ __all__ = [
     "forecast_harness",
     "timetags",
     "coincidence",
+    "eb_observables",
 ]
 
 from . import free_space_link  # makes sat_qkd_lab.free_space_link available
