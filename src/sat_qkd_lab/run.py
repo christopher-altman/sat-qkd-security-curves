@@ -62,6 +62,7 @@ from .pass_model import (
     records_to_time_series,
     sample_fading_factors,
 )
+from .change_points import detect_change_points, attribute_incidents
 from .pointing import PointingParams
 from .experiment import ExperimentParams, run_experiment
 from .forecast_harness import run_forecast_harness
@@ -1639,6 +1640,13 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         records_pass,
         include_ci=finite_key_params is not None or args.fading,
     )
+    incidents = attribute_incidents(
+        pass_time_series,
+        detect_change_points(
+            pass_time_series,
+            metrics=("qber_mean", "headroom", "key_rate_bps"),
+        ),
+    )
     assumptions = [
         "loss_db derived from elevation profile using elevation_to_loss model",
         f"background_model daynight mode set to {background_mode}",
@@ -1727,6 +1735,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         },
         "time_series": pass_time_series,
         "summary": summary_pass,
+        "incidents": incidents,
         "artifacts": {
             "plots": plots,
         },

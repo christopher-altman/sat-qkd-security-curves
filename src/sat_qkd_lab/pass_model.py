@@ -337,6 +337,8 @@ def records_to_time_series(
         "secret_bits_dt": [float(r["secret_bits_dt"]) for r in records],
         "headroom": [float(r["headroom"]) for r in records],
     }
+    if "pointing_locked" in records[0]:
+        time_series["pointing_locked"] = [int(bool(r.get("pointing_locked"))) for r in records]
     if include_ci and "qber_ci_low" in records[0]:
         time_series["qber_ci_low"] = [float(r["qber_ci_low"]) for r in records]
         time_series["qber_ci_high"] = [float(r["qber_ci_high"]) for r in records]
