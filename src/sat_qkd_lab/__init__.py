@@ -26,6 +26,7 @@ __all__ = [
     "timing",
     "event_stream",
     "pointing",
+    "optics",
 ]
 
 from . import free_space_link  # makes sat_qkd_lab.free_space_link available
