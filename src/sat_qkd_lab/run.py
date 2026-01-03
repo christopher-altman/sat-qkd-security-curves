@@ -36,6 +36,7 @@ from .plotting import (
     plot_loss_vs_elevation,
     plot_attack_comparison_key_rate,
     plot_qber_headroom_vs_loss,
+    plot_car_vs_loss,
 )
 from .free_space_link import FreeSpaceLinkParams, generate_elevation_profile
 from .detector import DetectorParams, DEFAULT_DETECTOR
@@ -45,6 +46,8 @@ from .calibration import CalibrationModel
 from .pass_model import PassModelParams, compute_pass_records, records_to_time_series
 from .experiment import ExperimentParams, run_experiment
 from .forecast_harness import run_forecast_harness
+from .timetags import generate_pair_time_tags, generate_background_time_tags, merge_time_tags
+from .coincidence import match_coincidences
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -299,6 +302,25 @@ def build_parser() -> argparse.ArgumentParser:
     fr.add_argument("--unblind", action="store_true",
                     help="Write unblinded forecast analysis output")
 
+    # --- coincidence-sim command ---
+    cs = sub.add_parser("coincidence-sim", help="Simulate time-tagged coincidences and CAR vs loss.")
+    cs.add_argument("--loss-min", type=float, default=20.0)
+    cs.add_argument("--loss-max", type=float, default=60.0)
+    cs.add_argument("--steps", type=int, default=9)
+    cs.add_argument("--duration", type=float, default=1.0,
+                    help="Observation window duration in seconds")
+    cs.add_argument("--pair-rate-hz", type=float, default=5e5,
+                    help="Entangled pair generation rate (Hz)")
+    cs.add_argument("--background-rate-hz", type=float, default=5e4,
+                    help="Background rate per detector (Hz)")
+    cs.add_argument("--jitter-ps", type=float, default=80.0,
+                    help="Timing jitter sigma in picoseconds")
+    cs.add_argument("--tau-ps", type=float, default=200.0,
+                    help="Coincidence window in picoseconds")
+    cs.add_argument("--seed", type=int, default=0)
+    cs.add_argument("--outdir", type=str, default=".",
+                    help="Output directory for figures/reports (default: .)")
+
     return p
 
 
@@ -321,6 +343,8 @@ def main() -> None:
         _run_experiment(args)
     elif args.cmd == "forecast-run":
         _run_forecast_run(args)
+    elif args.cmd == "coincidence-sim":
+        _run_coincidence_sim(args)
 
 
 def _validate_args(args: argparse.Namespace) -> None:
@@ -467,6 +491,18 @@ def _validate_args(args: argparse.Namespace) -> None:
         validate_float("rep-rate-hz", args.rep_rate_hz, min_value=1e-9)
         if not Path(args.forecasts).exists():
             raise FileNotFoundError(f"Forecasts file not found: {args.forecasts}")
+    elif args.cmd == "coincidence-sim":
+        validate_float("loss-min", args.loss_min, min_value=0.0)
+        validate_float("loss-max", args.loss_max, min_value=0.0)
+        if args.loss_min > args.loss_max:
+            raise ValueError(f"loss-min ({args.loss_min}) > loss-max ({args.loss_max})")
+        validate_int("steps", args.steps, min_value=1)
+        validate_float("duration", args.duration, min_value=1e-9)
+        validate_float("pair-rate-hz", args.pair_rate_hz, min_value=0.0)
+        validate_float("background-rate-hz", args.background_rate_hz, min_value=0.0)
+        validate_float("jitter-ps", args.jitter_ps, min_value=0.0)
+        validate_float("tau-ps", args.tau_ps, min_value=1e-9)
+        validate_seed(args.seed)
 
 
 def _resolve_n_sent_for_sweep(args: argparse.Namespace) -> int:
@@ -1441,6 +1477,97 @@ def _run_forecast_run(args: argparse.Namespace) -> None:
     print("Wrote:", outdir / "reports" / "forecast_blinded.json")
     if args.unblind:
         print("Wrote:", outdir / "reports" / "forecast_unblinded.json")
+
+
+def _run_coincidence_sim(args: argparse.Namespace) -> None:
+    """Execute coincidence simulation with time-tagging."""
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    (outdir / "figures").mkdir(exist_ok=True)
+    (outdir / "reports").mkdir(exist_ok=True)
+
+    loss_values = np.linspace(args.loss_min, args.loss_max, args.steps)
+    sigma_s = args.jitter_ps * 1e-12
+    tau_s = args.tau_ps * 1e-12
+
+    rng = np.random.default_rng(args.seed)
+    records = []
+
+    for idx, loss_db in enumerate(loss_values):
+        eta = 10 ** (-float(loss_db) / 10.0)
+        expected_pairs = args.pair_rate_hz * args.duration * (eta ** 2)
+        n_pairs = int(rng.poisson(expected_pairs))
+
+        sig_a, sig_b = generate_pair_time_tags(
+            n_pairs=n_pairs,
+            duration_s=args.duration,
+            sigma_a=sigma_s,
+            sigma_b=sigma_s,
+            seed=args.seed + idx,
+        )
+        bg_a = generate_background_time_tags(
+            rate_hz=args.background_rate_hz,
+            duration_s=args.duration,
+            sigma=sigma_s,
+            seed=args.seed + 1000 + idx * 2,
+        )
+        bg_b = generate_background_time_tags(
+            rate_hz=args.background_rate_hz,
+            duration_s=args.duration,
+            sigma=sigma_s,
+            seed=args.seed + 1000 + idx * 2 + 1,
+        )
+        tags_a = merge_time_tags(sig_a, bg_a)
+        tags_b = merge_time_tags(sig_b, bg_b)
+
+        result = match_coincidences(tags_a, tags_b, tau_seconds=tau_s)
+        records.append({
+            "loss_db": float(loss_db),
+            "coincidences": int(result.coincidences),
+            "accidentals": int(result.accidentals),
+            "car": float(result.car),
+            "matrices": result.matrices,
+        })
+
+    plot_path = plot_car_vs_loss(
+        records,
+        str(outdir / "figures" / "car_vs_loss.png"),
+    )
+    print("Plot:", plot_path)
+
+    cars = [r["car"] for r in records if np.isfinite(r["car"])]
+    summary = {
+        "max_car": float(max(cars)) if cars else 0.0,
+        "mean_car": float(np.mean(cars)) if cars else 0.0,
+    }
+
+    report = {
+        "schema_version": "1.0",
+        "mode": "coincidence-sim",
+        "timestamp_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "inputs": {
+            "loss_min": args.loss_min,
+            "loss_max": args.loss_max,
+            "steps": args.steps,
+            "duration_seconds": args.duration,
+            "pair_rate_hz": args.pair_rate_hz,
+            "background_rate_hz": args.background_rate_hz,
+            "jitter_ps": args.jitter_ps,
+            "tau_ps": args.tau_ps,
+            "seed": args.seed,
+        },
+        "records": records,
+        "summary": summary,
+        "artifacts": {
+            "car_plot": "figures/car_vs_loss.png",
+        },
+    }
+
+    report_path = outdir / "reports" / "latest_coincidence.json"
+    with open(report_path, "w") as f:
+        json.dump(report, f, indent=2)
+        f.write("\n")
+    print("Wrote:", report_path)
 
 
 if __name__ == "__main__":

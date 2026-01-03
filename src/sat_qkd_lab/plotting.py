@@ -701,6 +701,48 @@ def plot_loss_vs_elevation(
     return out_path
 
 
+def plot_car_vs_loss(
+    records: Sequence[Dict[str, Any]],
+    out_path: str,
+) -> str:
+    """
+    Plot coincidence-to-accidental ratio (CAR) vs loss.
+
+    Parameters
+    ----------
+    records : Sequence[Dict[str, Any]]
+        Coincidence results with loss_db and car.
+    out_path : str
+        Output path for the plot.
+
+    Returns
+    -------
+    str
+        Path to the saved plot.
+    """
+    loss = _extract(records, "loss_db")
+    car = _extract(records, "car")
+
+    finite = np.isfinite(car)
+    if np.any(finite):
+        max_finite = np.max(car[finite])
+        car_plot = np.where(finite, car, max_finite * 1.5)
+    else:
+        car_plot = np.zeros_like(car)
+
+    fig, ax = plt.subplots()
+    ax.plot(loss, car_plot, marker="o", markersize=3)
+    ax.set_xlabel("Channel loss (dB)")
+    ax.set_ylabel("CAR (coincidence / accidental)")
+    ax.set_title("CAR vs loss")
+    ax.set_ylim(bottom=0)
+
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+
+    return out_path
+
+
 def plot_decoy_comparison(
     records_bb84: Sequence[Dict[str, Any]],
     records_decoy: Sequence[Dict[str, Any]],
