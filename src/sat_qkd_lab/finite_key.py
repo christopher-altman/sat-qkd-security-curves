@@ -357,6 +357,59 @@ def finite_key_rate_per_pulse(
     }
 
 
+def composable_finite_key_report(
+    n_sent: int,
+    n_sifted: int,
+    n_errors: int,
+    params: Optional[FiniteKeyParams] = None,
+    qber_abort_threshold: float = 0.11,
+) -> Dict[str, Any]:
+    """
+    Produce a composable finite-key bookkeeping report.
+
+    Explicitly tracks:
+    - error correction leakage
+    - privacy amplification epsilon penalty term
+    - parameter estimation sample size and bounds
+    - epsilons combined end-to-end
+
+    Bound used: Hoeffding inequality for QBER estimation.
+    """
+    if params is None:
+        params = FiniteKeyParams()
+
+    result = finite_key_rate_per_pulse(
+        n_sent=n_sent,
+        n_sifted=n_sifted,
+        n_errors=n_errors,
+        params=params,
+        qber_abort_threshold=qber_abort_threshold,
+    )
+
+    return {
+        "n_sent": n_sent,
+        "n_sifted": n_sifted,
+        "n_errors": n_errors,
+        "qber_hat": result["qber_hat"],
+        "qber_upper": result["qber_upper"],
+        "m_pe": result["m_pe"],
+        "pe_frac": result["pe_frac"],
+        "eps_pe": result["eps_pe"],
+        "eps_sec": result["eps_sec"],
+        "eps_cor": result["eps_cor"],
+        "eps_total": result["eps_total"],
+        "leak_ec_bits": result["leak_ec_bits"],
+        "privacy_amplification_term_bits": result["delta_eps_bits"],
+        "secret_bits": result["ell_bits"],
+        "key_rate_per_pulse": result["key_rate_per_pulse"],
+        "aborted": result["aborted"],
+        "bound": {
+            "name": "Hoeffding",
+            "description": "QBER upper bound using Hoeffding inequality.",
+        },
+    }
+
+
 def compare_asymptotic_vs_finite(
     n_sent: int,
     n_sifted: int,
