@@ -825,6 +825,46 @@ def plot_secure_window_impact(
     return out_path
 
 
+def plot_pointing_lock_state(
+    records: Sequence[Dict[str, Any]],
+    out_path: str,
+) -> str:
+    """
+    Plot pointing lock state over time.
+    """
+    time_s = _extract(records, "time_s")
+    lock_state = np.array([1.0 if r.get("pointing_locked") else 0.0 for r in records])
+    fig, ax = plt.subplots()
+    ax.step(time_s, lock_state, where="post")
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Lock state")
+    ax.set_ylim(-0.1, 1.1)
+    ax.set_title("Pointing lock state")
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    return out_path
+
+
+def plot_transmittance_with_pointing(
+    records: Sequence[Dict[str, Any]],
+    out_path: str,
+) -> str:
+    """
+    Plot transmittance multiplier from pointing over time.
+    """
+    time_s = _extract(records, "time_s")
+    trans = np.array([r.get("pointing_transmittance", 0.0) for r in records], dtype=float)
+    fig, ax = plt.subplots()
+    ax.plot(time_s, trans, color="steelblue")
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Transmittance multiplier")
+    ax.set_title("Transmittance with pointing")
+    ax.set_ylim(bottom=0.0)
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    return out_path
+
+
 def plot_decoy_comparison(
     records_bb84: Sequence[Dict[str, Any]],
     records_decoy: Sequence[Dict[str, Any]],

@@ -20,6 +20,7 @@ from .free_space_link import (
 )
 from .helpers import h2
 from .sweep import compute_headroom
+from .pointing import PointingParams, simulate_pointing_profile
 
 
 @dataclass(frozen=True)
@@ -116,6 +117,7 @@ def compute_pass_records(
     finite_key: Optional[FiniteKeyParams] = None,
     calibration: Optional[CalibrationModel] = None,
     fading: Optional[FadingParams] = None,
+    pointing: Optional[PointingParams] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Compute per-time-step pass records and summary outputs.
@@ -133,6 +135,16 @@ def compute_pass_records(
         pass_duration_s=params.pass_seconds,
     )
 
+    lock_state = None
+    trans_multiplier = None
+    dropout_count = 0
+    lock_fraction = 0.0
+    if pointing is not None:
+        lock_state, trans_multiplier, dropout_count, lock_fraction = simulate_pointing_profile(
+            time_s,
+            pointing,
+        )
+
     records: List[Dict[str, Any]] = []
     total_bits = 0.0
     key_rate_bps_values: List[float] = []
@@ -144,6 +156,10 @@ def compute_pass_records(
         loss_db = elevation_to_loss_db(float(el), link)
         p_bg_eff = background_prob(det.p_bg, link, params.background_mode)
         eta_ch_mean = 10 ** (-loss_db / 10.0)
+        if trans_multiplier is not None:
+            idx = int(round(t_s / params.dt_seconds)) if params.dt_seconds > 0 else 0
+            idx = min(max(idx, 0), len(trans_multiplier) - 1)
+            eta_ch_mean *= float(trans_multiplier[idx])
 
         n_sent = int(round(params.rep_rate_hz * params.dt_seconds))
         if fading is not None and fading.enabled:
@@ -246,6 +262,11 @@ def compute_pass_records(
                 qber_ci_high=qber_ci_high,
             )["headroom"],
         }
+        if lock_state is not None and trans_multiplier is not None:
+            idx = int(round(t_s / params.dt_seconds)) if params.dt_seconds > 0 else 0
+            idx = min(max(idx, 0), len(lock_state) - 1)
+            record["pointing_locked"] = bool(lock_state[idx])
+            record["pointing_transmittance"] = float(trans_multiplier[idx])
         if qber_ci_low is not None and qber_ci_high is not None:
             record["qber_ci_low"] = float(qber_ci_low)
             record["qber_ci_high"] = float(qber_ci_high)
@@ -272,21 +293,31 @@ def compute_pass_records(
         start = float(time_s[idx[0]])
         end = float(time_s[idx[-1]])
         secure_window_seconds = float((idx[-1] - idx[0] + 1) * params.dt_seconds)
+        secure_window_seconds_total = float(np.sum(secure_mask) * params.dt_seconds)
+        transitions = np.diff(secure_mask.astype(int))
+        secure_segments = int(np.sum(transitions == 1) + (1 if secure_mask[0] else 0))
     else:
         start = None
         end = None
         secure_window_seconds = 0.0
+        secure_window_seconds_total = 0.0
+        secure_segments = 0
 
     summary = {
         "qber_abort": float(params.qber_abort_threshold),
         "peak_key_rate_bps": float(max(key_rate_bps_values)) if key_rate_bps_values else 0.0,
         "total_secret_bits": float(total_bits),
         "secure_window_seconds": float(secure_window_seconds),
+        "secure_window_seconds_total": float(secure_window_seconds_total),
+        "secure_window_segments": int(secure_segments),
         "secure_window": {
             "t_start_seconds": start,
             "t_end_seconds": end,
         },
     }
+    if pointing is not None:
+        summary["lock_fraction"] = float(lock_fraction)
+        summary["dropout_count"] = int(dropout_count)
 
     return records, summary
 
