@@ -82,6 +82,7 @@ from .event_stream import StreamParams, generate_event_stream
 from .optics import OpticalParams, background_rate_hz, dark_count_rate_hz
 from .constellation import schedule_passes, simulate_inventory
 from .fading_samples import sample_fading_transmittance, plot_eta_samples
+from .hil_adapters import ingest_timetag_file, playback_pass, compute_validation_diffs
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -353,6 +354,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Correctness failure probability")
     ex.add_argument("--bell-mode", action="store_true",
                     help="Include Bell/visibility observables in outputs")
+    ex.add_argument("--ingest-tags", type=str, default=None,
+                    help="Path to time-tag file for HIL validation")
+    ex.add_argument("--ingest-tau-ps", type=float, default=200.0,
+                    help="Coincidence window for HIL playback (ps)")
     ex.add_argument("--unblind", action="store_true",
                     help="Write unblinded schedule and include group analysis")
     ex.add_argument("--outdir", type=str, default=".",
@@ -634,6 +639,9 @@ def _validate_args(args: argparse.Namespace) -> None:
         if args.finite_key:
             validate_float("eps-sec", args.eps_sec, min_value=0.0, max_value=1.0)
             validate_float("eps-cor", args.eps_cor, min_value=0.0, max_value=1.0)
+        validate_float("ingest-tau-ps", args.ingest_tau_ps, min_value=1e-6)
+        if args.ingest_tags is not None and not Path(args.ingest_tags).exists():
+            raise FileNotFoundError(f"Time-tag file not found: {args.ingest_tags}")
     elif args.cmd == "forecast-run":
         validate_seed(args.seed)
         validate_int("n-blocks", args.n_blocks, min_value=1)
@@ -1871,6 +1879,30 @@ def _run_experiment(args: argparse.Namespace) -> None:
         bell_mode=args.bell_mode,
         unblind=args.unblind,
     )
+    if args.ingest_tags is not None:
+        tags_a, tags_b = ingest_timetag_file(args.ingest_tags)
+        playback = playback_pass(
+            tags_a=tags_a,
+            tags_b=tags_b,
+            tau_seconds=args.ingest_tau_ps * 1e-12,
+        )
+        expected_qber = float(np.mean([b["metrics"]["qber_mean"] for b in output["block_results"]]))
+        expected = {
+            "qber_mean": expected_qber,
+            "car": None,
+        }
+        hil_validation = compute_validation_diffs(
+            observed=playback,
+            expected=expected,
+            qber_abort_threshold=params.qber_abort_threshold,
+        )
+        hil_validation["ingest_tags"] = args.ingest_tags
+        hil_validation["tau_ps"] = float(args.ingest_tau_ps)
+        output["hil_validation"] = hil_validation
+        output_path = outdir / "reports" / "latest_experiment.json"
+        with open(output_path, "w") as f:
+            json.dump(output, f, indent=2)
+            f.write("\n")
     print("Wrote:", outdir / "reports" / "latest_experiment.json")
     if args.unblind:
         print("Wrote:", outdir / "reports" / "schedule_unblinded.json")

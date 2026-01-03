@@ -31,6 +31,7 @@ __all__ = [
     "change_points",
     "constellation",
     "fading_samples",
+    "hil_adapters",
 ]
 
 from . import free_space_link  # makes sat_qkd_lab.free_space_link available
