@@ -46,6 +46,7 @@ from .plotting import (
     plot_pointing_lock_state,
     plot_transmittance_with_pointing,
     plot_background_rate_vs_bandwidth,
+    plot_clock_sync_diagnostics,
 )
 from .free_space_link import FreeSpaceLinkParams, generate_elevation_profile
 from .detector import DetectorParams, DEFAULT_DETECTOR
@@ -69,6 +70,7 @@ from .pointing import PointingParams
 from .experiment import ExperimentParams, run_experiment
 from .forecast_harness import run_forecast_harness
 from .timetags import (
+    TimeTags,
     generate_pair_time_tags,
     generate_background_time_tags,
     merge_time_tags,
@@ -83,6 +85,7 @@ from .optics import OpticalParams, background_rate_hz, dark_count_rate_hz
 from .constellation import schedule_passes, simulate_inventory
 from .fading_samples import sample_fading_transmittance, plot_eta_samples
 from .hil_adapters import ingest_timetag_file, playback_pass, compute_validation_diffs
+from .clock_sync import generate_beacon_times, apply_clock_model, estimate_offset_drift
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -408,6 +411,19 @@ def build_parser() -> argparse.ArgumentParser:
     csw.add_argument("--outdir", type=str, default=".",
                      help="Output directory for reports/figures (default: .)")
 
+    # --- clock-sync command ---
+    clk = sub.add_parser("clock-sync", help="Estimate clock offset/drift from beacon stream.")
+    clk.add_argument("--duration-s", type=float, default=10.0)
+    clk.add_argument("--rate-hz", type=float, default=1e3)
+    clk.add_argument("--offset-s", type=float, default=5e-9)
+    clk.add_argument("--drift-ppm", type=float, default=2.0)
+    clk.add_argument("--jitter-ps", type=float, default=20.0)
+    clk.add_argument("--pair-rate-hz", type=float, default=1e5)
+    clk.add_argument("--tau-ps", type=float, default=200.0)
+    clk.add_argument("--seed", type=int, default=0)
+    clk.add_argument("--outdir", type=str, default=".",
+                     help="Output directory for reports/figures (default: .)")
+
     # --- coincidence-sim command ---
     cs = sub.add_parser("coincidence-sim", help="Simulate time-tagged coincidences and CAR vs loss.")
     cs.add_argument("--loss-min", type=float, default=20.0)
@@ -485,6 +501,8 @@ def main() -> None:
         _run_calibration_fit(args)
     elif args.cmd == "constellation-sweep":
         _run_constellation_sweep(args)
+    elif args.cmd == "clock-sync":
+        _run_clock_sync(args)
 
 
 def _validate_args(args: argparse.Namespace) -> None:
@@ -700,6 +718,15 @@ def _validate_args(args: argparse.Namespace) -> None:
         validate_float("initial-bits", args.initial_bits, min_value=0.0)
         validate_float("production-bits-per-pass", args.production_bits_per_pass, min_value=0.0)
         validate_float("consumption-bps", args.consumption_bps, min_value=0.0)
+        validate_seed(args.seed)
+    elif args.cmd == "clock-sync":
+        validate_float("duration-s", args.duration_s, min_value=1e-6)
+        validate_float("rate-hz", args.rate_hz, min_value=1e-9)
+        validate_float("offset-s", args.offset_s)
+        validate_float("drift-ppm", args.drift_ppm)
+        validate_float("jitter-ps", args.jitter_ps, min_value=0.0)
+        validate_float("pair-rate-hz", args.pair_rate_hz, min_value=0.0)
+        validate_float("tau-ps", args.tau_ps, min_value=1e-9)
         validate_seed(args.seed)
 
 
@@ -2297,6 +2324,108 @@ def _run_constellation_sweep(args: argparse.Namespace) -> None:
     print("Wrote:", report_path)
     print("Plot:", inventory_plot_path)
     print("Plot:", flow_plot_path)
+
+
+def _run_clock_sync(args: argparse.Namespace) -> None:
+    """Execute clock beacon sync estimation and locked scoring."""
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    (outdir / "reports").mkdir(exist_ok=True)
+    (outdir / "figures").mkdir(exist_ok=True)
+
+    jitter_sigma_s = args.jitter_ps * 1e-12
+    times_a = generate_beacon_times(
+        duration_s=args.duration_s,
+        rate_hz=args.rate_hz,
+        jitter_sigma_s=jitter_sigma_s,
+        seed=args.seed,
+    )
+    times_b = apply_clock_model(times_a, args.offset_s, args.drift_ppm)
+    if jitter_sigma_s > 0:
+        rng = np.random.default_rng(args.seed + 1)
+        times_b = times_b + rng.normal(0.0, jitter_sigma_s, size=times_b.size)
+
+    sync = estimate_offset_drift(times_a, times_b)
+    residuals = sync.residuals_s
+    diag_path = plot_clock_sync_diagnostics(
+        t_seconds=times_a[:residuals.size],
+        residuals=residuals,
+        out_path=str(outdir / "figures" / "clock_sync_diagnostics.png"),
+    )
+    print("Plot:", diag_path)
+
+    n_pairs = int(max(1.0, args.pair_rate_hz * args.duration_s))
+    tags_a, tags_b = generate_pair_time_tags(
+        n_pairs=n_pairs,
+        duration_s=args.duration_s,
+        sigma_a=jitter_sigma_s,
+        sigma_b=jitter_sigma_s,
+        seed=args.seed + 2,
+    )
+    skewed_times_b = apply_clock_model(tags_b.times, args.offset_s, args.drift_ppm)
+    tags_b = TimeTags(
+        times=skewed_times_b,
+        is_signal=tags_b.is_signal,
+        basis=tags_b.basis,
+        bit=tags_b.bit,
+    )
+
+    tau_seconds = args.tau_ps * 1e-12
+    pre_sync = match_coincidences(tags_a, tags_b, tau_seconds=tau_seconds)
+    correction = TimingModel(delta_t=-sync.offset_s, drift_ppm=-sync.drift_ppm, tdc_seconds=0.0)
+    post_sync = match_coincidences(tags_a, tags_b, tau_seconds=tau_seconds, timing_model=correction)
+
+    def _qber_from_matrices(matrices):
+        total = 0
+        errors = 0
+        for counts in matrices.values():
+            total += sum(sum(row) for row in counts)
+            errors += counts[0][1] + counts[1][0]
+        if total == 0:
+            return float("nan")
+        return float(errors / total)
+
+    report = {
+        "schema_version": "1.0",
+        "mode": "clock-sync",
+        "timestamp_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "inputs": {
+            "duration_s": float(args.duration_s),
+            "rate_hz": float(args.rate_hz),
+            "offset_s": float(args.offset_s),
+            "drift_ppm": float(args.drift_ppm),
+            "jitter_ps": float(args.jitter_ps),
+            "pair_rate_hz": float(args.pair_rate_hz),
+            "tau_ps": float(args.tau_ps),
+            "seed": int(args.seed),
+        },
+        "estimates": {
+            "offset_s": sync.offset_s,
+            "drift_ppm": sync.drift_ppm,
+            "residual_std_s": sync.residual_std_s,
+        },
+        "pre_sync": {
+            "coincidences": int(pre_sync.coincidences),
+            "accidentals": int(pre_sync.accidentals),
+            "car": float(pre_sync.car),
+            "qber_mean": _qber_from_matrices(pre_sync.matrices),
+        },
+        "post_sync": {
+            "coincidences": int(post_sync.coincidences),
+            "accidentals": int(post_sync.accidentals),
+            "car": float(post_sync.car),
+            "qber_mean": _qber_from_matrices(post_sync.matrices),
+        },
+        "artifacts": {
+            "clock_sync_diagnostics": "figures/clock_sync_diagnostics.png",
+        },
+    }
+
+    report_path = outdir / "reports" / "latest_clock_sync.json"
+    with open(report_path, "w") as f:
+        json.dump(report, f, indent=2)
+        f.write("\n")
+    print("Wrote:", report_path)
 
 
 if __name__ == "__main__":
