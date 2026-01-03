@@ -4,7 +4,9 @@ Clock beacon sync utilities for offset/drift estimation.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Tuple
+from datetime import datetime, timezone
+from typing import Dict, Any
+import json
 import numpy as np
 
 
@@ -14,6 +16,13 @@ class ClockSyncResult:
     drift_ppm: float
     residual_std_s: float
     residuals_s: np.ndarray
+
+
+@dataclass(frozen=True)
+class SyncParams:
+    offset_s: float
+    drift_ppm: float
+    source: str
 
 
 def generate_beacon_times(
@@ -67,4 +76,32 @@ def estimate_offset_drift(
         drift_ppm=float(drift_ppm),
         residual_std_s=residual_std,
         residuals_s=residuals,
+    )
+
+
+def sync_params_payload(params: SyncParams) -> Dict[str, Any]:
+    return {
+        "schema_version": "1.0",
+        "mode": "sync-params",
+        "timestamp_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "offset_s": float(params.offset_s),
+        "drift_ppm": float(params.drift_ppm),
+        "source": params.source,
+    }
+
+
+def write_sync_params(path: str, params: SyncParams) -> None:
+    payload = sync_params_payload(params)
+    with open(path, "w") as f:
+        json.dump(payload, f, indent=2)
+        f.write("\n")
+
+
+def load_sync_params(path: str) -> SyncParams:
+    with open(path, "r") as f:
+        payload = json.load(f)
+    return SyncParams(
+        offset_s=float(payload.get("offset_s", 0.0)),
+        drift_ppm=float(payload.get("drift_ppm", 0.0)),
+        source=str(payload.get("source", "manual")),
     )

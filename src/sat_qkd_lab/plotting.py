@@ -985,6 +985,27 @@ def plot_pointing_lock_state(
     return out_path
 
 
+def plot_sync_lock_state(
+    duration_s: float,
+    locked: bool,
+    out_path: str,
+) -> str:
+    """
+    Plot sync lock state over time.
+    """
+    time_s = np.array([0.0, max(0.0, float(duration_s))])
+    lock_state = np.array([1.0 if locked else 0.0, 1.0 if locked else 0.0])
+    fig, ax = plt.subplots()
+    ax.step(time_s, lock_state, where="post")
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Lock state")
+    ax.set_ylim(-0.1, 1.1)
+    ax.set_title("Sync lock state")
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    return out_path
+
+
 def plot_transmittance_with_pointing(
     records: Sequence[Dict[str, Any]],
     out_path: str,
