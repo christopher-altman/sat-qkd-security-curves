@@ -233,7 +233,7 @@ key_rate_per_pulse = (n_sifted / n_sent) × secret_fraction
 - Demonstrates PNS attack resilience (motivation for real satellite QKD)
 
 References:
-- Lim et al., "Concise security bounds for practical decoy-state QKD" (PRA 2014)
+- Lim et al., [Concise security bounds for practical decoy-state quantum key distribution.](https://doi.org/10.1103/PhysRevA.89.022307) (PRA 2014)
 
 **Input Validation** — CLI arguments are validated post-parse with clear error messages:
 - `validate_int(name, value, min_value, max_value)` — Integer bounds checking
@@ -305,8 +305,8 @@ References:
 ```
 
 References:
-- Liao et al., "Satellite-to-ground quantum key distribution" (Nature 2017)
-- Bourgoin et al., "Free-space QKD to a moving receiver" (NJP 2013)
+- Liao et al., [Satellite-to-ground quantum key distribution.](https://doi.org/10.1038/nature23655) (Nature 2017)
+- Bourgoin et al., [A comprehensive design and performance analysis of low Earth orbit satellite quantum communication.](https://doi.org/10.1088/1367-2630/15/2/023006) (NJP 2013)
 
 ### Simulator API
 
@@ -462,17 +462,17 @@ Operators need to see where secrecy collapses long before it fails in the field.
 
 ## References
 
-1. Bennett, C. H., & Brassard, G. (1984). [Quantum cryptography: Public key distribution and coin tossing.](https://www.sciencedirect.com/science/article/pii/S0304397514004241) *Proceedings of the IEEE International Conference on Computers, Systems and Signal Processing* (Bangalore, India), 175–179.
+1. Altman, C., Williams, C., Ursin, R., Villoresi, P., Sharma, V. [Astronaut Development and Deployment of a Secure Space Communications Network.](https://drive.google.com/file/d/0B99KWApna6GoX3JzZGMzbzNrMjg/view?resourcekey=0-b1lf7VUq8QmpRriVN5N2sw) NASA NIAC/OCT; DARPA QUINESS (Macroscopic Quantum Communications). 
 
-2. Ekert, A. K. (1991). [Quantum cryptography based on Bell's theorem.](https://doi.org/10.1103/PhysRevLett.67.661) *Physical Review Letters*, *67*(6), 661–663. 
+2. Bennett, C. H., & Brassard, G. (1984). [Quantum cryptography: Public key distribution and coin tossing.](https://www.sciencedirect.com/science/article/pii/S0304397514004241) *Proceedings of the IEEE International Conference on Computers, Systems and Signal Processing* (Bangalore, India), 175–179.
 
-3. Shor, P. W., & Preskill, J. (2000). [Simple proof of security of the BB84 quantum key distribution protocol.](https://doi.org/10.1103/PhysRevLett.85.441) *Physical Review Letters*, *85*, 441–444. 
+3. Ekert, A. K. (1991). [Quantum cryptography based on Bell's theorem.](https://doi.org/10.1103/PhysRevLett.67.661) *Physical Review Letters*, *67*(6), 661–663. 
 
-4. Renner, R., Gisin, N., & Kraus, B. (2005). [An information-theoretic security proof for QKD protocols.](http://arXiv:quant-ph/0502064) *[Physical Review A](https://doi.org/10.1103/PhysRevA.72.012332)*, *72*, 012332.  
+4. Shor, P. W., & Preskill, J. (2000). [Simple proof of security of the BB84 quantum key distribution protocol.](https://doi.org/10.1103/PhysRevLett.85.441) *Physical Review Letters*, *85*, 441–444. 
 
-5. Gisin, N., Ribordy, G., Tittel, W., & Zbinden, H. (2002). [Quantum cryptography.](https://doi.org/10.1103/RevModPhys.74.145) *Reviews of Modern Physics*, *74*(1), 145–195. 
+5. Renner, R., Gisin, N., & Kraus, B. (2005). [An information-theoretic security proof for QKD protocols.](http://arXiv:quant-ph/0502064) *[Physical Review A](https://doi.org/10.1103/PhysRevA.72.012332)*, *72*, 012332.  
 
-6. Altman, C., Williams, C., Ursin, R., Villoresi, P., Sharma, V. [Astronaut Development and Deployment of a Secure Space Communications Network.](https://drive.google.com/file/d/0B99KWApna6GoX3JzZGMzbzNrMjg/view?resourcekey=0-b1lf7VUq8QmpRriVN5N2sw) NASA NIAC/OCT; DARPA QUINESS (Macroscopic Quantum Communications). 
+6. Gisin, N., Ribordy, G., Tittel, W., & Zbinden, H. (2002). [Quantum cryptography.](https://doi.org/10.1103/RevModPhys.74.145) *Reviews of Modern Physics*, *74*(1), 145–195. 
 
 7. Tomamichel, M., Lim, C. C. W., Gisin, N., & Renner, R. (2012). [Tight finite-key analysis for quantum cryptography.](https://doi.org/10.1038/ncomms1631) *Nature Communications*, *3*, 634.
 
