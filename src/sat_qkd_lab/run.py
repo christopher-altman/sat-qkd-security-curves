@@ -537,6 +537,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="TDC resolution in picoseconds (0 = no quantization)")
     cs.add_argument("--sync-params", type=str, default=None,
                     help="Path to sync_params.json from clock-sync")
+    cs.add_argument("--allow-inline-sync", action="store_true",
+                    help="Allow inline sync estimation during scoring")
     cs.add_argument("--allow-resync", action="store_true",
                     help="Allow resync estimation during scoring")
     cs.add_argument("--estimate-offset", action="store_true",
@@ -2210,8 +2212,9 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
     afterpulse_decay_s = args.afterpulse_decay_ps * 1e-12
     tdc_seconds = args.tdc_ps * 1e-12
 
-    if args.estimate_offset and not args.allow_resync:
-        raise ValueError("Resync estimation disabled; pass --allow-resync to override.")
+    allow_inline_sync = bool(args.allow_inline_sync or args.allow_resync)
+    if args.estimate_offset and not allow_inline_sync:
+        raise ValueError("Inline sync estimation disabled; pass --allow-inline-sync or --allow-resync to override.")
 
     sync_locked = True
     sync_source = "manual"
@@ -2225,7 +2228,7 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
         sync_source = params.source or "beacon"
         sync_params_path = args.sync_params
 
-    if args.estimate_offset and args.allow_resync:
+    if args.estimate_offset and allow_inline_sync:
         sync_locked = False
         sync_source = "resync"
 
@@ -2425,6 +2428,7 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
             "clock_drift_ppm": args.clock_drift_ppm,
             "tdc_ps": args.tdc_ps,
             "sync_params": args.sync_params,
+            "allow_inline_sync": bool(args.allow_inline_sync),
             "allow_resync": bool(args.allow_resync),
             "estimate_offset": bool(args.estimate_offset),
             "stream_mode": bool(args.stream_mode),
@@ -2437,8 +2441,10 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
         "sync": {
             "locked": bool(sync_locked),
             "source": sync_source,
+            "method": sync_source,
             "offset_s": float(sync_offset_s),
             "drift_ppm": float(sync_drift_ppm),
+            "inline_sync_used": bool(args.estimate_offset and allow_inline_sync),
         },
         "timing_model": {
             "delta_t": float(sync_offset_s),

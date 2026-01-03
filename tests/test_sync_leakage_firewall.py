@@ -65,6 +65,14 @@ def test_resync_requires_explicit_allow(tmp_path: Path):
 
 
 def test_resync_allowed_marks_unlocked(tmp_path: Path):
-    output = _run_coincidence(tmp_path, ["--estimate-offset", "--allow-resync", "--seed", "3"])
+    output = _run_coincidence(tmp_path, ["--estimate-offset", "--allow-inline-sync", "--seed", "3"])
     assert output["sync"]["locked"] is False
     assert output["sync"]["source"] == "resync"
+    assert output["sync"]["inline_sync_used"] is True
+
+
+def test_allow_resync_alias_marks_inline(tmp_path: Path):
+    output = _run_coincidence(tmp_path, ["--estimate-offset", "--allow-resync", "--seed", "4"])
+    assert output["sync"]["locked"] is False
+    assert output["sync"]["source"] == "resync"
+    assert output["sync"]["inline_sync_used"] is True
