@@ -50,6 +50,7 @@ from .plotting import (
     plot_fading_evolution,
     plot_secure_window_fragmentation,
     plot_basis_bias_vs_elevation,
+    plot_calibration_quality_card,
 )
 from .free_space_link import FreeSpaceLinkParams, generate_elevation_profile
 from .detector import DetectorParams, DEFAULT_DETECTOR
@@ -60,6 +61,7 @@ from .telemetry import load_telemetry
 from .calibration_fit import (
     fit_telemetry_parameters,
     predict_with_uncertainty,
+    compute_fit_quality,
 )
 from .pass_model import (
     PassModelParams,
@@ -2229,6 +2231,7 @@ def _run_calibration_fit(args: argparse.Namespace) -> None:
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     (outdir / "reports").mkdir(exist_ok=True)
+    (outdir / "figures").mkdir(exist_ok=True)
 
     records = load_telemetry(args.telemetry)
 
@@ -2245,6 +2248,7 @@ def _run_calibration_fit(args: argparse.Namespace) -> None:
     )
 
     predicted = predict_with_uncertainty(records, fit, args.eta_base)
+    fit_quality = compute_fit_quality(records, fit, args.eta_base)
 
     params_output = {
         "eta_base": args.eta_base,
@@ -2283,6 +2287,7 @@ def _run_calibration_fit(args: argparse.Namespace) -> None:
             "grid_steps": args.grid_steps,
         },
         "fit": params_output,
+        "fit_quality": fit_quality,
         "predicted": predicted,
         "artifacts": {
             "calibration_params": "reports/calibration_params.json",
@@ -2294,6 +2299,35 @@ def _run_calibration_fit(args: argparse.Namespace) -> None:
         json.dump(report, f, indent=2)
         f.write("\n")
     print("Wrote:", report_path)
+
+    card_plot_path = plot_calibration_quality_card(
+        r2=float(fit_quality["r2"]),
+        rmse=float(fit.rmse),
+        residual_std=float(fit.residual_std),
+        condition_number=float(fit_quality["condition_number"]),
+        identifiable=bool(fit_quality["identifiable"]),
+        out_path=str(outdir / "figures" / "calibration_quality_card.png"),
+    )
+    print("Plot:", card_plot_path)
+
+    card_report = {
+        "schema_version": "1.0",
+        "mode": "calibration-card",
+        "timestamp_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "inputs": {
+            "telemetry_path": args.telemetry,
+            "eta_base": args.eta_base,
+        },
+        "fit_quality": fit_quality,
+        "artifacts": {
+            "calibration_quality_card": "figures/calibration_quality_card.png",
+        },
+    }
+    card_path = outdir / "reports" / "latest_calibration_card.json"
+    with open(card_path, "w") as f:
+        json.dump(card_report, f, indent=2)
+        f.write("\n")
+    print("Wrote:", card_path)
 
 
 def _run_constellation_sweep(args: argparse.Namespace) -> None:

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy as np
 
-from sat_qkd_lab.calibration_fit import fit_telemetry_parameters, predict_qber
+from sat_qkd_lab.calibration_fit import fit_telemetry_parameters, predict_qber, compute_fit_quality
 from sat_qkd_lab.telemetry import load_telemetry, TelemetryRecord
 
 
@@ -89,3 +89,36 @@ def test_fit_instrument_params_from_telemetry():
     assert fit.pointing_jitter_sigma is not None
     expected_sigma = float(np.std(record.transmittance_series, ddof=1))
     assert abs(fit.pointing_jitter_sigma - expected_sigma) <= 1e-12
+
+
+def test_fit_quality_metrics():
+    eta_base = 0.2
+    true_params = {
+        "eta_scale": 0.85,
+        "p_bg": 2e-4,
+        "flip_prob": 0.02,
+    }
+    records = [
+        TelemetryRecord(
+            loss_db=loss,
+            qber_mean=predict_qber(
+                loss_db=loss,
+                eta_scale=true_params["eta_scale"],
+                p_bg=true_params["p_bg"],
+                flip_prob=true_params["flip_prob"],
+                eta_base=eta_base,
+            ),
+        )
+        for loss in [10, 20, 30, 40]
+    ]
+    fit = fit_telemetry_parameters(
+        records=records,
+        eta_base=eta_base,
+        p_bg_grid=np.array([true_params["p_bg"]]),
+        flip_grid=np.array([true_params["flip_prob"]]),
+        eta_scale_grid=np.array([true_params["eta_scale"]]),
+    )
+    quality = compute_fit_quality(records, fit, eta_base)
+    assert quality["r2"] > 0.99
+    assert "parameter_uncertainty" in quality
+    assert quality["identifiable"] in (True, False)
