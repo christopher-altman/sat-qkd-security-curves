@@ -17,6 +17,8 @@ __all__ = [
     "windows",
     "scoring",
     "forecast_harness",
+    "timetags",
+    "coincidence",
 ]
 
 from . import free_space_link  # makes sat_qkd_lab.free_space_link available
