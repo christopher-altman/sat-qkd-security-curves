@@ -4,12 +4,13 @@ Coincidence matching and CAR computation for time-tag streams.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Optional
 import math
 
 import numpy as np
 
 from .timetags import TimeTags
+from .timing import TimingModel, apply_timing_model, estimate_clock_offset
 
 
 @dataclass(frozen=True)
@@ -18,12 +19,15 @@ class CoincidenceResult:
     accidentals: int
     car: float
     matrices: Dict[str, List[List[int]]]
+    estimated_offset_s: Optional[float] = None
 
 
 def match_coincidences(
     tags_a: TimeTags,
     tags_b: TimeTags,
     tau_seconds: float,
+    timing_model: Optional[TimingModel] = None,
+    estimate_offset: bool = False,
 ) -> CoincidenceResult:
     """
     Match time tags with a two-pointer merge.
@@ -33,6 +37,26 @@ def match_coincidences(
     """
     if tau_seconds <= 0:
         raise ValueError("tau_seconds must be positive.")
+
+    estimated_offset = None
+    if timing_model is not None:
+        if estimate_offset:
+            search_window = 5.0 * tau_seconds
+            coarse_step = max(tau_seconds / 2.0, 1e-12)
+            fine_step = max(tau_seconds / 10.0, 1e-12)
+            estimated_offset = estimate_clock_offset(
+                tags_a=tags_a,
+                tags_b=tags_b,
+                model=timing_model,
+                tau_seconds=tau_seconds,
+                search_window_s=search_window,
+                coarse_step_s=coarse_step,
+                fine_step_s=fine_step,
+                rng=np.random.default_rng(0),
+            )
+            tags_b = apply_timing_model(tags_b, timing_model, rng=np.random.default_rng(1), delta_override=estimated_offset)
+        else:
+            tags_b = apply_timing_model(tags_b, timing_model, rng=np.random.default_rng(1))
 
     i = 0
     j = 0
@@ -78,4 +102,5 @@ def match_coincidences(
         accidentals=accidentals,
         car=car,
         matrices=matrices,
+        estimated_offset_s=estimated_offset,
     )

@@ -70,6 +70,7 @@ from .timetags import (
 )
 from .coincidence import match_coincidences
 from .eb_observables import compute_observables
+from .timing import TimingModel
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -372,6 +373,14 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Afterpulse window in picoseconds")
     cs.add_argument("--afterpulse-decay-ps", type=float, default=0.0,
                     help="Afterpulse decay time in picoseconds (0 = flat)")
+    cs.add_argument("--clock-offset-s", type=float, default=0.0,
+                    help="Clock offset between Alice/Bob in seconds")
+    cs.add_argument("--clock-drift-ppm", type=float, default=0.0,
+                    help="Clock drift in ppm (linear over time)")
+    cs.add_argument("--tdc-ps", type=float, default=0.0,
+                    help="TDC resolution in picoseconds (0 = no quantization)")
+    cs.add_argument("--estimate-offset", action="store_true",
+                    help="Estimate clock offset via coincidence scan")
     cs.add_argument("--seed", type=int, default=0)
     cs.add_argument("--outdir", type=str, default=".",
                     help="Output directory for figures/reports (default: .)")
@@ -571,6 +580,9 @@ def _validate_args(args: argparse.Namespace) -> None:
         validate_float("afterpulse-prob", args.afterpulse_prob, min_value=0.0, max_value=1.0)
         validate_float("afterpulse-window-ps", args.afterpulse_window_ps, min_value=0.0)
         validate_float("afterpulse-decay-ps", args.afterpulse_decay_ps, min_value=0.0)
+        validate_float("clock-offset-s", args.clock_offset_s, min_value=-1.0, max_value=1.0)
+        validate_float("clock-drift-ppm", args.clock_drift_ppm, min_value=-1e6, max_value=1e6)
+        validate_float("tdc-ps", args.tdc_ps, min_value=0.0)
         validate_seed(args.seed)
         validate_float("min-visibility", args.min_visibility, min_value=0.0, max_value=1.0)
         validate_float("min-chsh-s", args.min_chsh_s, min_value=0.0)
@@ -1639,6 +1651,7 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
     dead_time_s = args.dead_time_ps * 1e-12
     afterpulse_window_s = args.afterpulse_window_ps * 1e-12
     afterpulse_decay_s = args.afterpulse_decay_ps * 1e-12
+    tdc_seconds = args.tdc_ps * 1e-12
 
     rng = np.random.default_rng(args.seed)
     records = []
@@ -1690,7 +1703,19 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
             tags_a = apply_dead_time(tags_a, dead_time_s)
             tags_b = apply_dead_time(tags_b, dead_time_s)
 
-        result = match_coincidences(tags_a, tags_b, tau_seconds=tau_s)
+        timing_model = TimingModel(
+            delta_t=args.clock_offset_s,
+            drift_ppm=args.clock_drift_ppm,
+            tdc_seconds=tdc_seconds,
+            jitter_sigma_s=0.0,
+        )
+        result = match_coincidences(
+            tags_a,
+            tags_b,
+            tau_seconds=tau_s,
+            timing_model=timing_model,
+            estimate_offset=args.estimate_offset,
+        )
         obs = compute_observables(
             correlation_counts={
                 "AB": result.matrices["Z"],
@@ -1713,6 +1738,7 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
             "chsh_sigma": float(obs.chsh_sigma),
             "correlations": obs.correlations,
             "aborted": bool(obs.aborted),
+            "estimated_clock_offset_s": result.estimated_offset_s,
         })
 
     plot_path = plot_car_vs_loss(
@@ -1756,10 +1782,20 @@ def _run_coincidence_sim(args: argparse.Namespace) -> None:
             "afterpulse_prob": args.afterpulse_prob,
             "afterpulse_window_ps": args.afterpulse_window_ps,
             "afterpulse_decay_ps": args.afterpulse_decay_ps,
+            "clock_offset_s": args.clock_offset_s,
+            "clock_drift_ppm": args.clock_drift_ppm,
+            "tdc_ps": args.tdc_ps,
+            "estimate_offset": bool(args.estimate_offset),
             "seed": args.seed,
         },
         "records": records,
         "summary": summary,
+        "timing_model": {
+            "delta_t": args.clock_offset_s,
+            "drift_ppm": args.clock_drift_ppm,
+            "tdc_seconds": tdc_seconds,
+            "estimated_clock_offset_s": records[-1]["estimated_clock_offset_s"] if args.estimate_offset else None,
+        },
         "artifacts": {
             "car_plot": "figures/car_vs_loss.png",
             "chsh_plot": "figures/chsh_s_vs_loss.png",
