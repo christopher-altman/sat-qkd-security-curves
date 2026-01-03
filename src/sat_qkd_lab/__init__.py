@@ -13,6 +13,10 @@ __all__ = [
     "eb_qkd",
     "pass_model",
     "experiment",
+    "forecast",
+    "windows",
+    "scoring",
+    "forecast_harness",
 ]
 
 from . import free_space_link  # makes sat_qkd_lab.free_space_link available
