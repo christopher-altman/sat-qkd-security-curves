@@ -39,13 +39,21 @@ from .plotting import (
     plot_car_vs_loss,
     plot_chsh_s_vs_loss,
     plot_visibility_vs_loss,
+    plot_eta_fading_samples,
+    plot_secure_window_impact,
 )
 from .free_space_link import FreeSpaceLinkParams, generate_elevation_profile
 from .detector import DetectorParams, DEFAULT_DETECTOR
 from .decoy_bb84 import DecoyParams, sweep_decoy_loss
 from .attacks import Attack, AttackConfig
 from .calibration import CalibrationModel
-from .pass_model import PassModelParams, compute_pass_records, records_to_time_series
+from .pass_model import (
+    PassModelParams,
+    FadingParams,
+    compute_pass_records,
+    records_to_time_series,
+    sample_fading_factors,
+)
 from .experiment import ExperimentParams, run_experiment
 from .forecast_harness import run_forecast_harness
 from .timetags import (
@@ -277,6 +285,15 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Explicit parameter estimation sample size (overrides --pe-frac)")
     ps.add_argument("--calibration-file", type=str, default=None,
                     help="Optional JSON file with calibration specs (off by default)")
+    # Fading/pointing jitter model for pass-sweep
+    ps.add_argument("--fading", action="store_true",
+                    help="Enable lognormal fading for transmittance")
+    ps.add_argument("--fading-sigma-ln", type=float, default=0.3,
+                    help="Lognormal sigma for fading (default: 0.3)")
+    ps.add_argument("--fading-samples", type=int, default=50,
+                    help="Number of fading samples per time step")
+    ps.add_argument("--fading-seed", type=int, default=0,
+                    help="Seed for fading sampling (default: 0)")
 
     # --- experiment-run command ---
     ex = sub.add_parser("experiment-run", help="Run blinded intervention A/B experiment harness.")
@@ -478,6 +495,10 @@ def _validate_args(args: argparse.Namespace) -> None:
             validate_float("pe-frac", args.pe_frac, min_value=1e-9, max_value=1.0)
             if args.m_pe is not None:
                 validate_int("m-pe", args.m_pe, min_value=1)
+        if args.fading:
+            validate_float("fading-sigma-ln", args.fading_sigma_ln, min_value=0.0)
+            validate_int("fading-samples", args.fading_samples, min_value=1)
+            validate_seed(args.fading_seed)
         time_s, _ = generate_elevation_profile(
             max_elevation_deg=args.max_elevation,
             min_elevation_deg=args.min_elevation,
@@ -1298,6 +1319,15 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
             m_pe=args.m_pe,
         )
 
+    fading_params = None
+    if args.fading:
+        fading_params = FadingParams(
+            enabled=True,
+            sigma_ln=args.fading_sigma_ln,
+            n_samples=args.fading_samples,
+            seed=args.fading_seed,
+        )
+
     pass_params = PassModelParams(
         max_elevation_deg=args.max_elevation,
         min_elevation_deg=args.min_elevation,
@@ -1315,7 +1345,19 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         detector=detector,
         finite_key=finite_key_params,
         calibration=calibration,
+        fading=fading_params,
     )
+
+    summary_base = None
+    if args.fading:
+        _, summary_base = compute_pass_records(
+            params=pass_params,
+            link_params=link_params,
+            detector=detector,
+            finite_key=finite_key_params,
+            calibration=calibration,
+            fading=None,
+        )
 
     # Generate plots
     elev_plot_path = plot_key_rate_vs_elevation(
@@ -1339,6 +1381,25 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         secure_end_s=summary_pass["secure_window"]["t_end_seconds"],
     )
     print("Plot:", secure_plot_alt_path)
+
+    if args.fading:
+        fading_samples = sample_fading_factors(
+            args.fading_samples,
+            args.fading_sigma_ln,
+            np.random.default_rng(args.fading_seed),
+        )
+        fading_plot_path = plot_eta_fading_samples(
+            fading_samples,
+            str(outdir / "figures" / "eta_fading_samples.png"),
+        )
+        print("Plot:", fading_plot_path)
+        if summary_base is not None:
+            impact_plot_path = plot_secure_window_impact(
+                summary_base["secure_window_seconds"],
+                summary_pass["secure_window_seconds"],
+                str(outdir / "figures" / "secure_window_fading_impact.png"),
+            )
+            print("Plot:", impact_plot_path)
 
     loss_plot_path = plot_loss_vs_elevation(
         records_pass,
@@ -1393,13 +1454,26 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         f.write("\n")
     print("Wrote:", report_path)
 
-    pass_time_series = records_to_time_series(records_pass, include_ci=finite_key_params is not None)
+    pass_time_series = records_to_time_series(
+        records_pass,
+        include_ci=finite_key_params is not None or args.fading,
+    )
     assumptions = [
         "loss_db derived from elevation profile using elevation_to_loss model",
         f"background_model daynight mode set to {background_mode}",
     ]
     if args.finite_key:
         assumptions.append("finite_key enabled implies Hoeffding bounds for QBER")
+    if args.fading:
+        assumptions.append("fading_model lognormal applied to transmittance samples")
+
+    plots = {
+        "key_rate_vs_elevation": "figures/key_rate_vs_elevation.png",
+        "secure_window": "figures/secure_window.png",
+    }
+    if args.fading:
+        plots["eta_fading_samples"] = "figures/eta_fading_samples.png"
+        plots["secure_window_fading_impact"] = "figures/secure_window_fading_impact.png"
 
     pass_report = {
         "schema_version": "1.0",
@@ -1428,6 +1502,15 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
                 "epsilon_cor": float(args.eps_cor),
                 "pe_fraction": float(args.pe_frac),
             },
+            "fading_model": {
+                "enabled": bool(args.fading),
+                "type": "lognormal",
+                "params": {
+                    "sigma_ln": float(args.fading_sigma_ln),
+                    "samples": int(args.fading_samples),
+                    "seed": int(args.fading_seed),
+                },
+            },
         },
         "units": {
             "rep_rate_hz": "Hz",
@@ -1443,10 +1526,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         "time_series": pass_time_series,
         "summary": summary_pass,
         "artifacts": {
-            "plots": {
-                "key_rate_vs_elevation": "figures/key_rate_vs_elevation.png",
-                "secure_window": "figures/secure_window.png",
-            }
+            "plots": plots,
         },
         "assumptions": assumptions,
     }
