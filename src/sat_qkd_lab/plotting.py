@@ -347,6 +347,36 @@ def plot_calibration_quality_card(
     return out_path
 
 
+def plot_calibration_residuals(
+    loss_db: np.ndarray,
+    observed: np.ndarray,
+    predicted: np.ndarray,
+    residuals: np.ndarray,
+    autocorr_lag1: float,
+    out_path: str,
+) -> str:
+    """Plot observed vs predicted and residuals vs loss."""
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+    axes[0].scatter(observed, predicted, color="steelblue", alpha=0.8)
+    min_val = float(min(observed.min(), predicted.min()))
+    max_val = float(max(observed.max(), predicted.max()))
+    axes[0].plot([min_val, max_val], [min_val, max_val], color="gray", linestyle="--")
+    axes[0].set_xlabel("Observed QBER")
+    axes[0].set_ylabel("Predicted QBER")
+    axes[0].set_title("Observed vs predicted")
+
+    axes[1].scatter(loss_db, residuals, color="darkorange", alpha=0.8)
+    axes[1].axhline(0.0, color="gray", linestyle="--", linewidth=0.8)
+    axes[1].set_xlabel("Loss (dB)")
+    axes[1].set_ylabel("Residual")
+    axes[1].set_title(f"Residuals (autocorr={autocorr_lag1:.2f})")
+
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    return out_path
+
+
 # --- Decoy-State Plotting ---
 
 def plot_decoy_key_rate_vs_loss(
