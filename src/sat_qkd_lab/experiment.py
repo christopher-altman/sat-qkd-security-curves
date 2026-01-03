@@ -78,6 +78,9 @@ def _simulate_block_metrics(
             qber_abort_threshold=params.qber_abort_threshold,
         )
         key_rate_per_pulse = fk["key_rate_per_pulse"]
+        finite_key_info = fk["finite_key"]
+        if finite_key_info["status"] != "secure":
+            key_rate_per_pulse = 0.0
     else:
         secret_fraction = max(0.0, 1.0 - 2.0 * h2(qber_mean))
         key_rate_per_pulse = params.sifted_fraction * secret_fraction
@@ -93,6 +96,8 @@ def _simulate_block_metrics(
         "headroom": float(headroom),
         "total_secret_bits": float(total_secret_bits),
     }
+    if finite_key is not None:
+        metrics["finite_key"] = finite_key_info
     if bell_mode:
         n_pairs = max(1, n_sifted)
         visibility_est = 1.0 - 2.0 * qber_mean

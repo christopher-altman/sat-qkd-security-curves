@@ -383,6 +383,14 @@ def sweep_loss_finite_key(
                 "aborted": True,
                 "leak_ec_bits": 0.0,
                 "delta_eps_bits": 0.0,
+                "finite_key_bound": 0.0,
+                "finite_key_status": "insecure",
+                "finite_key_reason": "NO-SECRET-KEY: bb84 aborted",
+            }
+            fk_result["finite_key"] = {
+                "bound": fk_result["finite_key_bound"],
+                "status": fk_result["finite_key_status"],
+                "reason": fk_result["finite_key_reason"],
             }
         else:
             n_errors = int(round(s.qber * s.n_sifted)) if s.n_sifted > 0 else 0
@@ -424,6 +432,7 @@ def sweep_loss_finite_key(
             "leak_ec_bits": fk_result["leak_ec_bits"],
             "delta_eps_bits": fk_result["delta_eps_bits"],
             "finite_key_aborted": fk_result["aborted"],
+            "finite_key": fk_result.get("finite_key"),
             # Comparison metrics
             "asymptotic_rate": comparison["asymptotic_rate"],
             "finite_rate": comparison["finite_rate"],
@@ -499,6 +508,14 @@ def sweep_finite_key_vs_n_sent(
                 "key_rate_per_pulse": 0.0,
                 "leak_ec_bits": 0.0,
                 "delta_eps_bits": 0.0,
+                "finite_key_bound": 0.0,
+                "finite_key_status": "insecure",
+                "finite_key_reason": "NO-SECRET-KEY: bb84 aborted",
+            }
+            fk_result["finite_key"] = {
+                "bound": fk_result["finite_key_bound"],
+                "status": fk_result["finite_key_status"],
+                "reason": fk_result["finite_key_reason"],
             }
         else:
             n_errors = int(round(s.qber * s.n_sifted))
@@ -521,6 +538,7 @@ def sweep_finite_key_vs_n_sent(
             "leak_ec_bits": fk_result["leak_ec_bits"],
             "delta_eps_bits": fk_result["delta_eps_bits"],
             "key_rate_per_pulse_finite": fk_result["key_rate_per_pulse"],
+            "finite_key": fk_result.get("finite_key"),
         })
 
     return out
