@@ -755,3 +755,80 @@ def plot_decoy_comparison(
     plt.close()
 
     return out_path
+
+
+def plot_qber_headroom_vs_loss(
+    records: Sequence[Dict[str, Any]],
+    out_path: str,
+    qber_abort: float = 0.11,
+    show_ci: bool = False,
+) -> str:
+    """
+    Plot QBER headroom (distance to abort threshold) vs channel loss.
+
+    Parameters
+    ----------
+    records : Sequence[Dict[str, Any]]
+        Sweep results with QBER metrics.
+    out_path : str
+        Output path for the plot.
+    qber_abort : float
+        QBER abort threshold (default 0.11 = 11%).
+    show_ci : bool
+        Whether to show confidence interval bands.
+
+    Returns
+    -------
+    str
+        Path to the saved plot.
+    """
+    loss = _extract(records, "loss_db")
+
+    # Check if CI data is available
+    has_ci = "qber_ci_low" in records[0] and "qber_ci_high" in records[0]
+
+    if has_ci and show_ci:
+        qber_mean = _extract(records, "qber_mean")
+        qber_ci_low = _extract(records, "qber_ci_low")
+        qber_ci_high = _extract(records, "qber_ci_high")
+
+        # Compute headroom for mean and CI bounds
+        headroom_mean = qber_abort - qber_mean
+        headroom_ci_low = qber_abort - qber_ci_high  # conservative
+        headroom_ci_high = qber_abort - qber_ci_low  # optimistic
+
+        plt.figure()
+        plt.plot(loss, headroom_mean, label="Mean headroom", color="blue")
+        plt.fill_between(
+            loss,
+            headroom_ci_low,
+            headroom_ci_high,
+            alpha=0.3,
+            label="95% CI",
+            color="blue",
+        )
+        plt.axhline(y=0, color="red", linestyle="--", linewidth=1, label="Abort threshold")
+        plt.xlabel("Channel loss (dB)")
+        plt.ylabel("QBER headroom (abort - QBER)")
+        plt.title(f"Security headroom vs loss (abort threshold = {qber_abort:.2%})")
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.savefig(out_path, dpi=200, bbox_inches="tight")
+        plt.close()
+    else:
+        # Single trial or no CI data
+        qber = _extract(records, "qber")
+        headroom = qber_abort - qber
+
+        plt.figure()
+        plt.plot(loss, headroom, label="Headroom", color="blue")
+        plt.axhline(y=0, color="red", linestyle="--", linewidth=1, label="Abort threshold")
+        plt.xlabel("Channel loss (dB)")
+        plt.ylabel("QBER headroom (abort - QBER)")
+        plt.title(f"Security headroom vs loss (abort threshold = {qber_abort:.2%})")
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.savefig(out_path, dpi=200, bbox_inches="tight")
+        plt.close()
+
+    return out_path

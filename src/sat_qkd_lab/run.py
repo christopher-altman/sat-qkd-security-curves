@@ -18,6 +18,8 @@ from .sweep import (
     sweep_finite_key_vs_n_sent,
     sweep_pass,
     compute_summary_stats,
+    compute_engineering_outputs,
+    compute_headroom,
 )
 from .plotting import (
     plot_key_metrics_vs_loss,
@@ -33,6 +35,7 @@ from .plotting import (
     plot_secure_window,
     plot_loss_vs_elevation,
     plot_attack_comparison_key_rate,
+    plot_qber_headroom_vs_loss,
 )
 from .free_space_link import FreeSpaceLinkParams, generate_elevation_profile
 from .detector import DetectorParams, DEFAULT_DETECTOR
@@ -55,8 +58,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Total pulses sent (overrides --pulses if set)")
     s.add_argument("--rep-rate", type=float, default=None,
                    help="Pulse repetition rate in Hz (requires --pass-seconds)")
+    s.add_argument("--rep-rate-hz", type=float, default=None,
+                   help="Pulse repetition rate in Hz for engineering outputs (bps calculation)")
     s.add_argument("--pass-seconds", type=float, default=None,
                    help="Pass duration in seconds used with --rep-rate")
+    s.add_argument("--target-bits", type=int, default=None,
+                   help="Target secret key volume in bits (computes required rep rate)")
     s.add_argument("--seed", type=int, default=0)
     s.add_argument("--outdir", type=str, default=".")
     # New detector parameters
@@ -287,10 +294,14 @@ def _validate_args(args: argparse.Namespace) -> None:
             validate_int("n-sent", args.n_sent, min_value=1)
         if args.rep_rate is not None:
             validate_float("rep-rate", args.rep_rate, min_value=1e-9)
+        if args.rep_rate_hz is not None:
+            validate_float("rep-rate-hz", args.rep_rate_hz, min_value=1e-9)
+        if args.target_bits is not None:
+            validate_int("target-bits", args.target_bits, min_value=1)
         if args.pass_seconds is not None:
             validate_float("pass-seconds", args.pass_seconds, min_value=1e-9)
-            if args.rep_rate is None:
-                raise ValueError("pass-seconds requires --rep-rate")
+            if args.rep_rate is None and args.rep_rate_hz is None and args.target_bits is None:
+                raise ValueError("pass-seconds requires either --rep-rate, --rep-rate-hz, or --target-bits")
         # Finite-key parameter validation
         if hasattr(args, "finite_key") and args.finite_key:
             validate_float("eps-pe", args.eps_pe, min_value=0.0, max_value=1.0)
@@ -466,6 +477,41 @@ def _run_sweep(args: argparse.Namespace) -> None:
             attack_config=attack_cfg,
         )
 
+        # Add engineering outputs and headroom to each record
+        for rec in no_attack:
+            # Engineering outputs
+            eng_out = compute_engineering_outputs(
+                rec["key_rate_per_pulse_mean"],
+                rep_rate_hz=args.rep_rate_hz,
+                pass_seconds=args.pass_seconds,
+                target_bits=args.target_bits,
+            )
+            rec.update(eng_out)
+
+            # Headroom calculations
+            headroom = compute_headroom(
+                rec["qber_mean"],
+                qber_ci_low=rec.get("qber_ci_low"),
+                qber_ci_high=rec.get("qber_ci_high"),
+            )
+            rec.update(headroom)
+
+        for rec in attack:
+            eng_out = compute_engineering_outputs(
+                rec["key_rate_per_pulse_mean"],
+                rep_rate_hz=args.rep_rate_hz,
+                pass_seconds=args.pass_seconds,
+                target_bits=args.target_bits,
+            )
+            rec.update(eng_out)
+
+            headroom = compute_headroom(
+                rec["qber_mean"],
+                qber_ci_low=rec.get("qber_ci_low"),
+                qber_ci_high=rec.get("qber_ci_high"),
+            )
+            rec.update(headroom)
+
         # Generate CI plots
         qber_ci_path = plot_qber_vs_loss_ci(
             no_attack, attack,
@@ -482,7 +528,15 @@ def _run_sweep(args: argparse.Namespace) -> None:
         import shutil
         legacy_sf_ci_path = outdir / "figures" / "key_rate_vs_loss_ci.png"
         shutil.copy(sf_ci_path, legacy_sf_ci_path)
+
+        # Generate headroom plot
+        headroom_path = plot_qber_headroom_vs_loss(
+            no_attack,
+            str(outdir / "figures" / "qber_headroom_vs_loss.png"),
+            show_ci=True,
+        )
         print("CI Plots:", qber_ci_path, sf_ci_path)
+        print("Headroom Plot:", headroom_path)
 
         # Build report with CI data
         report = {
@@ -520,8 +574,15 @@ def _run_sweep(args: argparse.Namespace) -> None:
                 "qber_ci_plot": "qber_vs_loss_ci.png",
                 "secret_fraction_ci_plot": "secret_fraction_vs_loss_ci.png",
                 "key_ci_plot": "key_rate_vs_loss_ci.png",  # legacy alias
+                "headroom_plot": "qber_headroom_vs_loss.png",
             },
         }
+
+        # Add engineering parameters if provided
+        if args.rep_rate_hz is not None:
+            report["parameters"]["rep_rate_hz"] = args.rep_rate_hz
+        if args.target_bits is not None:
+            report["parameters"]["target_bits"] = args.target_bits
     else:
         # Single trial (original behavior)
         no_attack = sweep_loss(
@@ -542,6 +603,31 @@ def _run_sweep(args: argparse.Namespace) -> None:
             attack_config=attack_cfg,
         )
 
+        # Add engineering outputs and headroom to each record
+        for rec in no_attack:
+            eng_out = compute_engineering_outputs(
+                rec["key_rate_per_pulse"],
+                rep_rate_hz=args.rep_rate_hz,
+                pass_seconds=args.pass_seconds,
+                target_bits=args.target_bits,
+            )
+            rec.update(eng_out)
+
+            headroom = compute_headroom(rec["qber"])
+            rec.update(headroom)
+
+        for rec in attack:
+            eng_out = compute_engineering_outputs(
+                rec["key_rate_per_pulse"],
+                rep_rate_hz=args.rep_rate_hz,
+                pass_seconds=args.pass_seconds,
+                target_bits=args.target_bits,
+            )
+            rec.update(eng_out)
+
+            headroom = compute_headroom(rec["qber"])
+            rec.update(headroom)
+
         q_path, k_path = plot_key_metrics_vs_loss(
             no_attack, attack,
             str(outdir / "figures" / "key"),
@@ -551,7 +637,15 @@ def _run_sweep(args: argparse.Namespace) -> None:
         import shutil
         legacy_k_path = outdir / "figures" / "key_key_fraction_vs_loss.png"
         shutil.copy(k_path, legacy_k_path)
+
+        # Generate headroom plot
+        headroom_path = plot_qber_headroom_vs_loss(
+            no_attack,
+            str(outdir / "figures" / "qber_headroom_vs_loss.png"),
+            show_ci=False,
+        )
         print("Plots:", q_path, k_path)
+        print("Headroom Plot:", headroom_path)
 
         report = {
             "schema_version": SCHEMA_VERSION,
@@ -583,8 +677,15 @@ def _run_sweep(args: argparse.Namespace) -> None:
                 "qber_plot": str(Path(q_path).name),
                 "secret_fraction_plot": str(Path(k_path).name),
                 "key_fraction_plot": "key_key_fraction_vs_loss.png",  # legacy alias
+                "headroom_plot": "qber_headroom_vs_loss.png",
             },
         }
+
+        # Add engineering parameters if provided
+        if args.rep_rate_hz is not None:
+            report["parameters"]["rep_rate_hz"] = args.rep_rate_hz
+        if args.target_bits is not None:
+            report["parameters"]["target_bits"] = args.target_bits
 
     with open(outdir / "reports" / "latest.json", "w") as f:
         json.dump(report, f, indent=2)

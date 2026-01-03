@@ -227,6 +227,37 @@ Both return structured results with QBER, secret fraction, and key rate metrics.
 ./py -m sat_qkd_lab.run pass-sweep --day --turbulence --sigma-ln 0.3
 ```
 
+### Engineering Outputs
+
+The simulator provides hardware-relevant metrics for system planning:
+
+**Bits per second and total bits per pass:**
+```bash
+# Compute key rate in bps and total secret bits for a 300s pass at 100 MHz rep rate
+./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 50 --steps 16 \
+  --rep-rate-hz 1e8 --pass-seconds 300
+```
+This adds `key_rate_bps` and `total_secret_bits` fields to the JSON output.
+
+**Required repetition rate to hit a target key volume:**
+```bash
+# Compute required rep rate to generate 1 million secret bits in a 300s pass
+./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 50 --steps 16 \
+  --target-bits 1000000 --pass-seconds 300
+```
+This adds `required_rep_rate_hz` to the JSON output. If `key_rate_per_pulse <= 0`, the output is `"inf"` with a note explaining the condition cannot be met.
+
+**Security headroom (QBER margin to abort threshold):**
+
+All sweeps now include `headroom` fields in the JSON output and generate `figures/qber_headroom_vs_loss.png`. Headroom is defined as:
+- `headroom = qber_abort - qber_mean`
+
+For multi-trial sweeps with confidence intervals:
+- `headroom_ci_low = qber_abort - qber_ci_high` (conservative)
+- `headroom_ci_high = qber_abort - qber_ci_low` (optimistic)
+
+Units are absolute QBER (e.g., headroom = 0.05 means 5% margin to the 11% abort threshold).
+
 ## Results
 
 The model generates:
@@ -235,6 +266,7 @@ The model generates:
 - `figures/key_fraction_vs_loss.png` — Secret fraction vs channel loss (legacy alias: `key_key_fraction_vs_loss.png`)
 - `figures/qber_vs_loss_ci.png` — QBER with 95% CI bands (when `--trials > 1`)
 - `figures/secret_fraction_vs_loss_ci.png` — Secret fraction with 95% CI (legacy alias: `key_rate_vs_loss_ci.png`)
+- `figures/qber_headroom_vs_loss.png` — Security headroom (QBER margin to abort) vs loss
 - `figures/decoy_key_rate_vs_loss.png` — Decoy-state key rate vs loss
 - `figures/decoy_key_rate_vs_loss_realism.png` — Decoy key rate vs loss with realism enabled
 - `figures/finite_key_comparison.png` — Asymptotic vs finite-key rate (when `--finite-key`)

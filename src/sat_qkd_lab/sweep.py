@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import List, Dict, Any, Sequence, Optional, Tuple
 from concurrent.futures import ProcessPoolExecutor
 import numpy as np
+import math
 from .bb84 import simulate_bb84
 from .attacks import Attack, AttackConfig
 from .link_budget import SatLinkParams, total_channel_loss_db
@@ -684,3 +685,100 @@ def sweep_pass(
     secure_window = estimate_secure_window(out, key_rates, time_step_s)
 
     return out, secure_window
+
+
+def compute_engineering_outputs(
+    key_rate_per_pulse: float,
+    rep_rate_hz: Optional[float] = None,
+    pass_seconds: Optional[float] = None,
+    target_bits: Optional[int] = None,
+    qber_abort: float = 0.11,
+) -> Dict[str, Any]:
+    """
+    Compute engineering outputs from per-pulse key rate.
+
+    Parameters
+    ----------
+    key_rate_per_pulse : float
+        Key rate per pulse (asymptotic or finite).
+    rep_rate_hz : float, optional
+        Pulse repetition rate in Hz.
+    pass_seconds : float, optional
+        Pass duration in seconds.
+    target_bits : int, optional
+        Target secret key volume in bits.
+    qber_abort : float
+        QBER abort threshold (default 0.11 = 11%).
+
+    Returns
+    -------
+    Dict[str, Any]
+        Engineering outputs including bps, total bits, required rep rate.
+    """
+    outputs = {}
+
+    # Compute bits per second if rep_rate_hz is provided
+    if rep_rate_hz is not None and rep_rate_hz > 0:
+        key_rate_bps = rep_rate_hz * key_rate_per_pulse
+        outputs["key_rate_bps"] = key_rate_bps
+
+        # Compute total secret bits if pass_seconds is also provided
+        if pass_seconds is not None and pass_seconds > 0:
+            total_secret_bits = key_rate_bps * pass_seconds
+            outputs["total_secret_bits"] = total_secret_bits
+
+    # Compute required rep rate to hit target bits
+    if target_bits is not None and pass_seconds is not None:
+        if key_rate_per_pulse > 0 and pass_seconds > 0:
+            required_rep_rate_hz = target_bits / (key_rate_per_pulse * pass_seconds)
+            outputs["required_rep_rate_hz"] = required_rep_rate_hz
+        else:
+            # Cannot reach target with zero or negative key rate
+            outputs["required_rep_rate_hz"] = "inf"
+            outputs["required_rep_rate_note"] = (
+                "Cannot reach target: key_rate_per_pulse <= 0 or pass_seconds <= 0"
+            )
+
+    return outputs
+
+
+def compute_headroom(
+    qber_mean: float,
+    qber_abort: float = 0.11,
+    qber_ci_low: Optional[float] = None,
+    qber_ci_high: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Compute security headroom (distance to QBER abort threshold).
+
+    Parameters
+    ----------
+    qber_mean : float
+        Mean QBER value.
+    qber_abort : float
+        QBER abort threshold (default 0.11 = 11%).
+    qber_ci_low : float, optional
+        Lower bound of QBER confidence interval.
+    qber_ci_high : float, optional
+        Upper bound of QBER confidence interval.
+
+    Returns
+    -------
+    Dict[str, Any]
+        Headroom metrics in absolute QBER units.
+    """
+    headroom = {}
+
+    # Basic headroom: distance from mean to abort
+    if not math.isnan(qber_mean):
+        headroom["headroom"] = qber_abort - qber_mean
+    else:
+        headroom["headroom"] = float("nan")
+
+    # Headroom with confidence intervals
+    if qber_ci_low is not None and not math.isnan(qber_ci_low):
+        headroom["headroom_ci_high"] = qber_abort - qber_ci_low  # optimistic
+    if qber_ci_high is not None and not math.isnan(qber_ci_high):
+        headroom["headroom_ci_low"] = qber_abort - qber_ci_high  # conservative
+
+    return headroom
