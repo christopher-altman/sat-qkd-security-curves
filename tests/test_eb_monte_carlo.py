@@ -383,6 +383,7 @@ def test_increasing_flip_prob_increases_qber():
         result = simulate_eb_coincidence_monte_carlo(
             n_pairs=200_000,
             params=params,
+            detector_alice=detector,
             detector_bob=detector,
             seed=42,
         )
