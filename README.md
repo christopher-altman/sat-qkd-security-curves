@@ -2,7 +2,7 @@
 
 # Satellite Quantum Key Distribution Security Curves
 
-*Quantum keys can fail quietly—loss and noise can leave you with bits, but no secrecy. We model the cliff to surface silent breakage before it becomes a system risk.*
+*Quantum keys can fail quietly—loss and noise can leave you with bits, but no secrecy. We model the cliff to expose silent breakage before it becomes a system risk.*
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -209,7 +209,7 @@ Quick run examples:
 
 ## Problem
 
-Satellite and fibre Quantum Key Distribution (QKD) systems live or die on a simple fact: bits can still flow while secrecy collapses. This experiment creates a reproducible "security curve" lab: simulate realistic loss/noise, models that security cliff and makes it visible before it becomes a system risk.
+Satellite and fibre Quantum Key Distribution (QKD) systems live or die on a simple fact: bits can still flow while secrecy collapses. This experiment creates a reproducible "security curve" lab: simulate realistic loss/noise, models the security cliff and makes it visible before it becomes a system risk.
 
 ## Hypothesis
 
@@ -246,7 +246,7 @@ Detector background `p_bg` is defined as a probability **per pulse / per detecti
 - Elevation profiles map to time‑varying loss and background during pass sweeps.  
 - Finite‑key penalties cap what can be claimed with limited samples, even when averages look good.  
 - Expected‑value sweeps, pass‑sweep time series, and the experiment/forecast harnesses are tied together under a single operational discipline.  
-- Topics: qml, quantum-ml, verification, cryptography, robustness, quantum-cryptography, qkd, bb84, satellite, security, noise-analysis, infosec, network-security, simulation.  
+- Scope: BB84/decoy, E91, CV-QKD (GG02 scaffold), finite-key, loss/noise sweeps, attack comparisons, satellite/free-space link models.  
 
 ## Implementation
 
@@ -444,10 +444,10 @@ The model generates:
 - `reports/latest.json` — Raw sweep metrics with schema version and timestamp
 
 **Figure 1. Estimated secret-key rate versus channel loss for BB84.** ([↑ featured figure](#featured-figure))
-X-axis: channel loss (dB). Y-axis: secret fraction (unitless). Simulated under the assumptions manifest. A scenario-generator sweep shows that link loss alone reduces detections but does not destroy secrecy until error rates dominate. Under an intercept–resend attack, the secret-key fraction collapses to zero at moderate loss even while sifted bits remain non-zero, revealing the security cliff where privacy amplification can no longer extract secrecy.
+X-axis: channel loss (dB). Y-axis: key rate per pulse (unitless). Simulated under the assumptions manifest. A scenario-generator sweep shows that link loss alone reduces detections but does not destroy secrecy until error rates dominate. Under an intercept–resend attack, the key rate per pulse collapses to zero at moderate loss even while sifted bits remain non-zero, revealing the security cliff where privacy amplification can no longer extract secrecy.
 
 **Figure 2. Quantum Bit Error Rate (QBER) versus channel loss for BB84.** ([↑ featured figure](#featured-figure))
-X-axis: channel loss (dB). Y-axis: QBER (unitless). Simulated under the assumptions manifest. Without attack, intrinsic measurement noise keeps QBER low across loss. An intercept–resend adversary injects a strong QBER signature, driving errors beyond the tolerable entropy budget. The plotted spikes illustrate the detectable breakage regime that classical throughput monitors would miss without explicit QBER estimation.
+X-axis: channel loss (dB). Y-axis: QBER (unitless). Simulated under the assumptions manifest. Without attack, QBER remains low until background/dark clicks dominate at high loss. An intercept–resend adversary injects a strong QBER signature, driving errors beyond the tolerable entropy budget. The plotted spikes illustrate the detectable breakage regime that classical throughput monitors would miss without explicit QBER estimation.
 
 ### JSON Output Schema (v0.4)
 
@@ -518,7 +518,7 @@ Operators need to see where secrecy collapses long before it fails in the field.
 
 ## Topics
 
-`qml` · `quantum-ml` · `verification` · `cryptography` · `robustness` · `quantum-cryptography` · `qkd` · `bb84` · `satellite` · `security` · `noise-analysis` · `infosec` · `network-security` · `simulation`· `information-security`· `quantum-entanglement`· `entanglement`· `quantum-machine-learning`· `quantum-key-distribution`
+`quantum-key-distribution` · `qkd` · `quantum-cryptography` · `bb84` · `decoy-state` · `e91` · `ekert91` · `entanglement-based-qkd` · `cvqkd` · `continuous-variable-qkd` · `gg02` · `finite-key` · `privacy-amplification` · `information-reconciliation` · `noise-analysis` · `security-analysis` · `adversarial-attacks` · `simulation` · `satellite-communications` · `free-space-optics`
 
 
 ## References
