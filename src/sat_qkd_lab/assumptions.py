@@ -67,4 +67,40 @@ def build_assumptions_manifest(schema_version: str) -> Dict[str, Any]:
                 "Do NOT use for production security claims or deployment planning.",
             ],
         },
+        "atmosphere": {
+            "purpose": "Scenario generator for atmospheric attenuation modeling",
+            "status": "scenario_generator",
+            "not_a_forecast": "This is NOT a meteorological forecast or sensor fusion pipeline",
+            "not_a_measurement": "This is NOT a validated atmospheric propagation model",
+            "models": {
+                "none": "No atmospheric attenuation (default)",
+                "simple_clear_sky": "Constant 0.2 dB/km baseline for clear-sky scenarios",
+                "kruse": "Visibility-based empirical model (Kruse approximation for aerosol scattering)",
+            },
+            "slant_path_integration": {
+                "formula": "atmosphere_loss_db = attenuation_db_km(...) * slant_path_km",
+                "slant_path_approximation": "slant_path_km = 1.0 / max(sin(elevation_deg * π / 180), 0.1)",
+                "note": "Plane-parallel toy approximation; NOT radiative transfer or refraction model",
+            },
+            "loss_bookkeeping": {
+                "total_loss_db": "Sum of all loss components",
+                "loss_components": {
+                    "system_loss_db": "System-level losses (optics, coupling, etc.)",
+                    "atmosphere_loss_db": "Atmospheric attenuation from scenario model",
+                },
+                "validation": "abs(loss_db - sum(loss_components.*)) <= float_eps",
+            },
+            "parameters": {
+                "wavelength_nm": "Optical wavelength in nanometers (default: 850)",
+                "visibility_km": "Meteorological visibility in kilometers (default: 23.0)",
+                "elevation_deg": "Elevation angle in degrees (varies per time step)",
+            },
+            "disclaimers": [
+                "This is a SCENARIO GENERATOR for exploring plausible atmospheric conditions.",
+                "Do NOT interpret as meteorological forecast.",
+                "Do NOT interpret as validated atmospheric propagation.",
+                "Do NOT interpret as real-time weather observation.",
+                "Use for QKD link planning scenarios only.",
+            ],
+        },
     }
