@@ -336,3 +336,160 @@ def test_zero_flip_prob():
     qber = result["qber_mean"]
     if not np.isnan(qber):
         assert qber < 0.02, f"QBER {qber} too high with zero flip_prob"
+
+
+def test_negative_n_pairs_raises_error():
+    """Test that n_pairs <= 0 raises ValueError."""
+    params = EBCoincidenceParams(
+        loss_db_alice=10.0,
+        loss_db_bob=10.0,
+        flip_prob=0.01,
+    )
+    detector = DetectorParams(eta=0.2, p_bg=1e-4)
+    
+    # Test n_pairs = 0
+    with pytest.raises(ValueError, match="n_pairs must be positive"):
+        simulate_eb_coincidence_monte_carlo(
+            n_pairs=0,
+            params=params,
+            detector_alice=detector,
+            detector_bob=detector,
+            seed=42,
+        )
+    
+    # Test n_pairs < 0
+    with pytest.raises(ValueError, match="n_pairs must be positive"):
+        simulate_eb_coincidence_monte_carlo(
+            n_pairs=-100,
+            params=params,
+            detector_alice=detector,
+            detector_bob=detector,
+            seed=42,
+        )
+
+
+def test_increasing_flip_prob_increases_qber():
+    """Test that increasing flip_prob leads to increased qber_mean."""
+    detector = DetectorParams(eta=0.3, p_bg=1e-5)
+    flip_probs = [0.001, 0.01, 0.05, 0.10]
+    qber_values = []
+    
+    for flip_prob in flip_probs:
+        params = EBCoincidenceParams(
+            loss_db_alice=5.0,
+            loss_db_bob=5.0,
+            flip_prob=flip_prob,
+        )
+        result = simulate_eb_coincidence_monte_carlo(
+            n_pairs=200_000,
+            params=params,
+            detector_bob=detector,
+            seed=42,
+        )
+        qber_values.append(result["qber_mean"])
+    
+    # Check that QBER increases with flip_prob
+    for i in range(len(qber_values) - 1):
+        assert qber_values[i] < qber_values[i + 1], (
+            f"QBER did not increase: flip_prob[{i}]={flip_probs[i]} -> qber={qber_values[i]}, "
+            f"flip_prob[{i+1}]={flip_probs[i+1]} -> qber={qber_values[i+1]}"
+        )
+
+
+def test_detector_efficiency_affects_coincidence_rate():
+    """Test that higher detector efficiency increases coincidence_rate."""
+    params = EBCoincidenceParams(
+        loss_db_alice=8.0,
+        loss_db_bob=8.0,
+        flip_prob=0.01,
+    )
+    
+    eta_values = [0.1, 0.2, 0.4, 0.6]
+    coincidence_rates = []
+    
+    for eta in eta_values:
+        detector = DetectorParams(eta=eta, p_bg=1e-5)
+        result = simulate_eb_coincidence_monte_carlo(
+            n_pairs=100_000,
+            params=params,
+            detector_alice=detector,
+            detector_bob=detector,
+            seed=123,
+        )
+        coincidence_rates.append(result["coincidence_rate"])
+    
+    # Check that coincidence rate increases with detector efficiency
+    for i in range(len(coincidence_rates) - 1):
+        assert coincidence_rates[i] < coincidence_rates[i + 1], (
+            f"Coincidence rate did not increase: eta[{i}]={eta_values[i]} -> rate={coincidence_rates[i]}, "
+            f"eta[{i+1}]={eta_values[i+1]} -> rate={coincidence_rates[i+1]}"
+        )
+
+
+def test_background_probability_affects_qber_and_coincidence():
+    """Test that increased background probability affects qber_mean and coincidence_rate."""
+    params = EBCoincidenceParams(
+        loss_db_alice=10.0,
+        loss_db_bob=10.0,
+        flip_prob=0.005,
+    )
+    
+    p_bg_values = [1e-6, 1e-5, 1e-4, 1e-3]
+    qber_values = []
+    coincidence_rates = []
+    
+    for p_bg in p_bg_values:
+        detector = DetectorParams(eta=0.25, p_bg=p_bg)
+        result = simulate_eb_coincidence_monte_carlo(
+            n_pairs=150_000,
+            params=params,
+            detector_alice=detector,
+            detector_bob=detector,
+            seed=456,
+        )
+        qber_values.append(result["qber_mean"])
+        coincidence_rates.append(result["coincidence_rate"])
+    
+    # QBER should increase with background (more background-induced errors)
+    assert qber_values[-1] > qber_values[0], (
+        f"QBER did not increase with background: p_bg={p_bg_values[0]} -> qber={qber_values[0]}, "
+        f"p_bg={p_bg_values[-1]} -> qber={qber_values[-1]}"
+    )
+    
+    # Coincidence rate should increase with background (more accidental coincidences)
+    assert coincidence_rates[-1] > coincidence_rates[0], (
+        f"Coincidence rate did not increase with background: "
+        f"p_bg={p_bg_values[0]} -> rate={coincidence_rates[0]}, "
+        f"p_bg={p_bg_values[-1]} -> rate={coincidence_rates[-1]}"
+    )
+
+
+def test_qber_abort_threshold_aborts_protocol():
+    """Test that qber_abort_threshold correctly aborts protocol and sets n_secret_est to 0."""
+    detector = DetectorParams(eta=0.2, p_bg=5e-4)
+    
+    # Set high flip_prob to ensure QBER exceeds threshold
+    params_abort = EBCoincidenceParams(
+        loss_db_alice=15.0,
+        loss_db_bob=15.0,
+        flip_prob=0.15,
+        qber_abort_threshold=0.08,  # Low threshold to trigger abort
+    )
+    
+    result = simulate_eb_coincidence_monte_carlo(
+        n_pairs=100_000,
+        params=params_abort,
+        detector_alice=detector,
+        detector_bob=detector,
+        seed=789,
+    )
+    
+    # Check that protocol is aborted when QBER exceeds threshold
+    if not np.isnan(result["qber_mean"]):
+        if result["qber_mean"] > params_abort.qber_abort_threshold:
+            assert result["aborted"], (
+                f"Protocol should abort when QBER {result['qber_mean']} > threshold {params_abort.qber_abort_threshold}"
+            )
+            assert result["n_secret_est"] == 0.0, (
+                f"n_secret_est should be 0 when aborted, got {result['n_secret_est']}"
+            )
