@@ -38,6 +38,7 @@ coverage.xml
 
 # docs is intentionally scratchpad (development artifacts, run logs, draft notes)
 docs/
+tools/
 
 # Generated run outputs
 runs/
@@ -47,3 +48,4 @@ reports/latest.json
 
 # Generated figures
 figures/*.png
+
