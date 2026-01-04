@@ -520,6 +520,77 @@ The curves show an engineering-facing "security budget." Loss reduces detections
 
 Operators need to see where secrecy collapses long before it fails in the field. Loss alone reduces detections, but secrecy fails when error rates dominate; intercept–resend drives the secret-key rate to zero even when sifted bits remain. The curves show an engineering‑facing security budget: physics‑level behavior (loss/noise/attack) translates into operational metrics (QBER, secret‑key rate), which are imperative in integrated satellite + fiber QKD networks. This framework makes the cliff explicit and measurable.
 
+## Architecture
+
+The codebase operates in two complementary modes:
+
+**Simulation World (assumptions → curves):** Configuration parameters and channel models flow through protocol simulators to produce security curves. Given loss profiles, detector parameters, and attack models, the system outputs QBER, secret fraction, and key rate metrics. This answers: "Given these assumptions, what is the security margin?"
+
+**Experiment/Telemetry World (observables → decisions):** Pass-time observables are ingested, parameters are estimated, and finite-key security decisions are made post-pass. This answers: "Given these measurements, can we extract a secure key?"
+
+### High-Level Pipeline
+
+```mermaid
+flowchart LR
+    subgraph Config["Configuration"]
+        A[assumptions.py]
+        D[detector.py]
+        L[free_space_link.py]
+    end
+
+    subgraph Link["Link/Channel"]
+        FL[total_link_loss_db]
+        AT[atmosphere.py]
+        OU[ou_fading.py]
+    end
+
+    subgraph Protocol["Protocol"]
+        BB[bb84.py]
+        DC[decoy_bb84.py]
+        EB[eb_qkd.py]
+    end
+
+    subgraph Security["Security"]
+        FK[finite_key.py]
+    end
+
+    subgraph Output["Output"]
+        SW[sweep.py]
+        PL[plotting.py]
+        RN[run.py → JSON]
+    end
+
+    A --> RN
+    D --> BB
+    L --> FL
+    AT --> FL
+    OU --> FL
+
+    FL --> BB
+    FL --> DC
+    FL --> EB
+
+    BB --> SW
+    DC --> SW
+    EB --> SW
+
+    SW --> FK
+    FK --> SW
+
+    SW --> RN
+    RN --> PL
+```
+
+### Override Safety
+
+When extending the codebase, understanding where changes are safe is critical:
+
+- **Green zones (safe):** Link budget geometry, atmospheric scenario models, plotting cosmetics, dashboard layout, adding tests
+- **Yellow zones (careful):** Detector parameters, attack implementations, calibration fitting, timing estimation
+- **Red zones (core security):** `finite_key.py` bounds, `bb84.py` sifting logic, `decoy_bb84.py` single-photon estimators, epsilon budget arithmetic
+
+For detailed module boundaries, extension points, and validation mapping, see the full [Architecture & Dependency Contract](specs/contracts/ARCHITECTURE.md).
+
 ## Topics
 
 `quantum-key-distribution` · `qkd` · `quantum-cryptography` · `bb84` · `decoy-state` · `e91` · `ekert91` · `entanglement-based-qkd` · `cvqkd` · `continuous-variable-qkd` · `gg02` · `finite-key` · `privacy-amplification` · `information-reconciliation` · `noise-analysis` · `security-analysis` · `adversarial-attacks` · `simulation` · `satellite-communications` · `free-space-optics`
