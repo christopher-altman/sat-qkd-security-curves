@@ -12,6 +12,10 @@ dependencies = [
     "matplotlib",
 ]
 
+[project.urls]
+"Homepage" = "https://www.christopheraltman.com"
+"Repository" = "https://github.com/christopher-altman/sat-qkd-security-curves"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
