@@ -274,6 +274,14 @@ key_rate_per_pulse = (n_sifted / n_sent) × secret_fraction
 References:
 - Lim et al., [Concise security bounds for practical decoy-state quantum key distribution.](https://doi.org/10.1103/PhysRevA.89.022307) (PRA 2014)
 
+**CV-QKD (GG02) Scaffold** — The `cv-sweep` command provides a structural scaffold for Continuous-Variable QKD using Gaussian-modulated coherent states:
+- Computes SNR and mutual information I(A:B) vs channel loss
+- Holevo bound computation is **stubbed** (returns None)
+- Secret key rate is **not yet validated** (requires full Holevo bound)
+- Status: "toy" / "scaffold" - NOT for production security claims
+
+This is a minimal demonstration of CV-QKD interfaces and assumptions manifest integration. See `docs/12_cvqkd_scaffold.md` for validation gates required before production use.
+
 **Input Validation** — CLI arguments are validated post-parse with clear error messages:
 - `validate_int(name, value, min_value, max_value)` — Integer bounds checking
 - `validate_float(name, value, min_value, max_value, allow_nan, allow_inf)` — Float bounds with NaN/inf control

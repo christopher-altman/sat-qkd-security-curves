@@ -43,4 +43,28 @@ def build_assumptions_manifest(schema_version: str) -> Dict[str, Any]:
             ),
             "physical_accuracy": "Not a validated optical link budget or composable security proof.",
         },
+        "cv_qkd": {
+            "protocol": "GG02 (Gaussian-modulated coherent states)",
+            "status": "scaffold",
+            "threat_model": "placeholder; not a security guarantee",
+            "computed": {
+                "snr": "Signal-to-noise ratio estimate from channel model",
+                "I_AB": "Mutual information I(A:B) using standard Gaussian channel formula",
+                "chi_BE": "Holevo bound χ(B:E) - NOT YET IMPLEMENTED (returns None)",
+                "secret_key_rate": "NOT YET VALIDATED - requires full Holevo bound computation",
+            },
+            "not_computed": [
+                "Full composable security proof",
+                "Optimal collective attack analysis",
+                "Covariance matrix symplectic eigenvalue analysis",
+                "Reverse reconciliation key rate (only toy direct reconciliation stub)",
+            ],
+            "loss_to_transmittance_mapping": "T = 10^(-loss_db/10)",
+            "notes": [
+                "This is a SCAFFOLD implementation for structural demonstration only.",
+                "SNR and I(A:B) use standard formulas but are not validated against experiments.",
+                "Holevo bound computation is stubbed; secret key rate is not yet available.",
+                "Do NOT use for production security claims or deployment planning.",
+            ],
+        },
     }

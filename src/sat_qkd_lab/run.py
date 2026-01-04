@@ -122,6 +122,7 @@ from .polarization_drift import (
 )
 from .eb_coincidence import sweep_eb_coincidence_loss
 from .git_meta import get_git_commit
+from .cv.gg02 import GG02Params, compute_secret_key_rate
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -591,6 +592,27 @@ def build_parser() -> argparse.ArgumentParser:
     eb.add_argument("--m-pe", type=int, default=None,
                     help="Explicit parameter estimation sample size (overrides --pe-frac)")
 
+    # --- cv-sweep command ---
+    cv = sub.add_parser("cv-sweep", help="CV-QKD (GG02) sweep over loss (scaffold/toy).")
+    cv.add_argument("--loss-min", type=float, default=0.0,
+                    help="Minimum channel loss in dB (default: 0.0)")
+    cv.add_argument("--loss-max", type=float, default=30.0,
+                    help="Maximum channel loss in dB (default: 30.0)")
+    cv.add_argument("--steps", type=int, default=31,
+                    help="Number of loss values to sweep (default: 31)")
+    cv.add_argument("--v-a", type=float, default=10.0,
+                    help="Alice modulation variance in shot noise units (default: 10.0)")
+    cv.add_argument("--xi", type=float, default=0.01,
+                    help="Excess noise in shot noise units (default: 0.01)")
+    cv.add_argument("--eta", type=float, default=0.6,
+                    help="Bob detection efficiency (default: 0.6)")
+    cv.add_argument("--v-el", type=float, default=0.01,
+                    help="Electronic noise in shot noise units (default: 0.01)")
+    cv.add_argument("--beta", type=float, default=0.95,
+                    help="Reconciliation efficiency (default: 0.95)")
+    cv.add_argument("--outdir", type=str, default=".",
+                    help="Output directory for reports/figures (default: .)")
+
     # --- coincidence-sim command ---
     cs = sub.add_parser("coincidence-sim", help="Simulate time-tagged coincidences and CAR vs loss.")
     cs.add_argument("--loss-min", type=float, default=20.0)
@@ -718,6 +740,8 @@ def main() -> None:
         _run_basis_bias(args)
     elif args.cmd == "eb-sweep":
         _run_eb_sweep(args)
+    elif args.cmd == "cv-sweep":
+        _run_cv_sweep(args)
     elif args.cmd == "assumptions":
         _run_assumptions()
     elif args.cmd == "mission":
@@ -3795,6 +3819,188 @@ def _run_basis_bias(args: argparse.Namespace) -> None:
         json.dump(report, f, indent=2)
         f.write("\n")
     print("Wrote:", report_path)
+
+
+def _run_cv_sweep(args: argparse.Namespace) -> None:
+    """Execute CV-QKD (GG02) sweep over loss (scaffold/toy)."""
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    (outdir / "reports").mkdir(exist_ok=True)
+    (outdir / "figures").mkdir(exist_ok=True)
+
+    # Generate loss sweep
+    loss_db_vals = np.linspace(args.loss_min, args.loss_max, args.steps)
+
+    # Storage for results
+    snr_vals = []
+    I_AB_vals = []
+    chi_BE_vals = []
+    secret_key_rate_vals = []
+    transmittance_vals = []
+
+    for loss_db in loss_db_vals:
+        # Convert loss to transmittance: T = 10^(-loss_db/10)
+        T = 10 ** (-loss_db / 10.0)
+        transmittance_vals.append(T)
+
+        # Create GG02 params
+        params = GG02Params(
+            V_A=args.v_a,
+            T=T,
+            xi=args.xi,
+            eta=args.eta,
+            v_el=args.v_el,
+            beta=args.beta,
+        )
+
+        # Compute result
+        result = compute_secret_key_rate(params)
+        snr_vals.append(result.snr)
+        I_AB_vals.append(result.I_AB)
+        chi_BE_vals.append(result.chi_BE if result.chi_BE is not None else float('nan'))
+        secret_key_rate_vals.append(result.secret_key_rate if result.secret_key_rate is not None else float('nan'))
+
+    # Convert to numpy arrays for plotting
+    snr_vals = np.array(snr_vals)
+    I_AB_vals = np.array(I_AB_vals)
+
+    # Plot: SNR vs loss
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.plot(loss_db_vals, snr_vals, 'o-', label='SNR (linear)')
+    ax.set_xlabel('Channel Loss (dB)')
+    ax.set_ylabel('SNR (linear)')
+    ax.set_title('CV-QKD GG02: SNR vs Loss (scaffold/toy)')
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    snr_plot_path = outdir / "figures" / "cv_snr_vs_loss.png"
+    fig.savefig(snr_plot_path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+    print("Plot:", snr_plot_path)
+
+    # Plot: Mutual information vs loss
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.plot(loss_db_vals, I_AB_vals, 'o-', label='I(A:B)', color='green')
+    ax.set_xlabel('Channel Loss (dB)')
+    ax.set_ylabel('Mutual Information (bits/use)')
+    ax.set_title('CV-QKD GG02: Mutual Information vs Loss (scaffold/toy)')
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    iab_plot_path = outdir / "figures" / "cv_mutual_info_vs_loss.png"
+    fig.savefig(iab_plot_path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+    print("Plot:", iab_plot_path)
+
+    # Build report
+    report = {
+        "schema_version": SCHEMA_VERSION,
+        "generated_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "cv_gg02_sweep": {
+            "parameters": {
+                "loss_min_db": float(args.loss_min),
+                "loss_max_db": float(args.loss_max),
+                "steps": int(args.steps),
+                "V_A": {
+                    "value": float(args.v_a),
+                    "units": "shot_noise_units",
+                    "classification": "simulated",
+                },
+                "xi": {
+                    "value": float(args.xi),
+                    "units": "shot_noise_units",
+                    "classification": "simulated",
+                },
+                "eta": {
+                    "value": float(args.eta),
+                    "units": "dimensionless",
+                    "classification": "simulated",
+                },
+                "v_el": {
+                    "value": float(args.v_el),
+                    "units": "shot_noise_units",
+                    "classification": "simulated",
+                },
+                "beta": {
+                    "value": float(args.beta),
+                    "units": "dimensionless",
+                    "classification": "simulated",
+                },
+            },
+            "records": [
+                {
+                    "loss_db": {
+                        "value": float(loss_db_vals[i]),
+                        "units": "dB",
+                        "classification": "simulated",
+                    },
+                    "transmittance": {
+                        "value": float(transmittance_vals[i]),
+                        "units": "dimensionless",
+                        "classification": "simulated",
+                    },
+                    "snr": {
+                        "value": float(snr_vals[i]),
+                        "units": "dimensionless",
+                        "classification": "simulated",
+                    },
+                    "I_AB": {
+                        "value": float(I_AB_vals[i]),
+                        "units": "bits_per_use",
+                        "classification": "simulated",
+                    },
+                }
+                for i in range(len(loss_db_vals))
+            ],
+            "summary": {
+                "max_snr": {
+                    "value": float(np.max(snr_vals)),
+                    "units": "dimensionless",
+                    "classification": "simulated",
+                },
+                "max_I_AB": {
+                    "value": float(np.max(I_AB_vals)),
+                    "units": "bits_per_use",
+                    "classification": "simulated",
+                },
+                "status": "toy",
+                "note": "Scaffold implementation; Holevo bound not yet computed; no validated secret key rate.",
+            },
+        },
+        "artifacts": {
+            "cv_snr_plot": "figures/cv_snr_vs_loss.png",
+            "cv_mutual_info_plot": "figures/cv_mutual_info_vs_loss.png",
+        },
+    }
+
+    _attach_manifest_and_git(report)
+
+    # Write to reports/latest.json (append to existing or create new)
+    report_path = outdir / "reports" / "latest.json"
+    if report_path.exists():
+        with open(report_path, "r") as f:
+            existing_report = json.load(f)
+        existing_report["cv_gg02_sweep"] = report["cv_gg02_sweep"]
+        if "artifacts" in existing_report:
+            existing_report["artifacts"].update(report["artifacts"])
+        else:
+            existing_report["artifacts"] = report["artifacts"]
+        # Update git/assumptions if present
+        if "assumptions_manifest" in report:
+            existing_report["assumptions_manifest"] = report["assumptions_manifest"]
+        if "git_commit" in report:
+            existing_report["git_commit"] = report["git_commit"]
+        report = existing_report
+
+    with open(report_path, "w") as f:
+        json.dump(report, f, indent=2)
+        f.write("\n")
+    print("Wrote:", report_path)
+
+    # Print summary
+    print("CV-QKD (GG02) sweep summary")
+    print(f"  SNR range: {np.min(snr_vals):.6g} to {np.max(snr_vals):.6g}")
+    print(f"  I(A:B) range: {np.min(I_AB_vals):.6g} to {np.max(I_AB_vals):.6g}")
+    print(f"  Status: toy (Holevo bound not implemented)")
 
 
 if __name__ == "__main__":
