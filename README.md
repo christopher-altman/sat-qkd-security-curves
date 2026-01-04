@@ -501,7 +501,8 @@ Operators need to see where secrecy collapses long before it fails in the field.
 
 ## Topics
 
-`qml` · `quantum-ml` · `verification` · `cryptography` · `robustness` · `quantum-cryptography` · `qkd` · `bb84` · `satellite` · `security` · `noise-analysis` · `infosec` · `network-security` · `simulation`
+`qml` · `quantum-ml` · `verification` · `cryptography` · `robustness` · `quantum-cryptography` · `qkd` · `bb84` · `satellite` · `security` · `noise-analysis` · `infosec` · `network-security` · `simulation`· `information-security`· `quantum-entanglement`· `entanglement`· `quantum-machine-learning`· `quantum-key-distribution`
+
 
 ## References
 
