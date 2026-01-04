@@ -150,6 +150,23 @@ def test_calibration_contract_range_violation() -> None:
         validate_calibration_record(record, expected_schema_version="0.4")
 
 
+def test_calibration_contract_optional_field_types() -> None:
+    record = _valid_calibration_record()
+    record["source"]["dataset_path"] = 123
+    with pytest.raises(ContractError, match="dataset_path"):
+        validate_calibration_record(record, expected_schema_version="0.4")
+
+    record = _valid_calibration_record()
+    record["fit_method"] = "grid"
+    with pytest.raises(ContractError, match="fit_method"):
+        validate_calibration_record(record, expected_schema_version="0.4")
+
+    record = _valid_calibration_record()
+    record["notes"] = {"note": "bad type"}
+    with pytest.raises(ContractError, match="notes"):
+        validate_calibration_record(record, expected_schema_version="0.4")
+
+
 def test_latest_contract_classification_tag_mismatch() -> None:
     report = _valid_latest_report()
     report["field_classification"]["pass_sweep.summary.total_secret_bits"] = "invalid"
@@ -189,6 +206,11 @@ def test_contract_coverage_checklist() -> None:
         "calibration.git_commit",
         "calibration.seed_policy",
         "calibration.source.type",
+        "calibration.source.dataset_path",
+        "calibration.source.dataset_hash_sha256",
+        "calibration.fit_method",
+        "calibration.fit_quality",
+        "calibration.notes",
         "calibration.parameters.eta",
         "calibration.parameters.p_bg",
         "calibration.parameters.flip_prob",

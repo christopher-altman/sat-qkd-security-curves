@@ -615,6 +615,24 @@ def build_parser() -> argparse.ArgumentParser:
     # --- mission command ---
     sub.add_parser("mission", help="Print a short simulated mission narrative.")
 
+    # --- replay command ---
+    r = sub.add_parser("replay", help="Replay a prior sweep report without drift.")
+    r.add_argument("--report", type=str, default="reports/latest.json",
+                   help="Path to a prior report JSON (default: reports/latest.json)")
+    r.add_argument("--outdir", type=str, default=".",
+                   help="Output directory for figures/reports (default: .)")
+    r.add_argument("--loss-min", type=float, default=None)
+    r.add_argument("--loss-max", type=float, default=None)
+    r.add_argument("--steps", type=int, default=None)
+    r.add_argument("--flip-prob", type=float, default=None)
+    r.add_argument("--pulses", type=int, default=None)
+    r.add_argument("--trials", type=int, default=None)
+    r.add_argument("--seed", type=int, default=None)
+    r.add_argument("--attack", type=str, default=None,
+                   choices=["none", "intercept_resend", "pns", "time_shift", "blinding"])
+    r.add_argument("--eta", type=float, default=None)
+    r.add_argument("--p-bg", type=float, default=None)
+
     return p
 
 
@@ -655,6 +673,8 @@ def main() -> None:
         _run_assumptions()
     elif args.cmd == "mission":
         _run_mission()
+    elif args.cmd == "replay":
+        _run_replay(args)
 
 
 def _run_assumptions() -> None:
@@ -681,6 +701,95 @@ def _run_mission() -> None:
     print("\n".join(lines))
 
 
+def _load_report_payload(path: str) -> dict[str, Any]:
+    report_path = Path(path)
+    if not report_path.exists():
+        raise FileNotFoundError(f"Report not found: {path}")
+    with open(report_path, "r") as f:
+        return json.load(f)
+
+
+def _resolve_replay_value(
+    name: str,
+    override: Any,
+    params: dict[str, Any],
+    *,
+    required: bool = True,
+) -> tuple[Any, bool]:
+    if override is not None:
+        return override, True
+    if name in params:
+        value = params[name]
+        if required and value is None:
+            raise ValueError(f"Replay requires parameters.{name} to be non-null.")
+        return value, False
+    if required:
+        raise ValueError(f"Replay requires parameters.{name} in the report.")
+    return None, False
+
+
+def _run_replay(args: argparse.Namespace) -> None:
+    """Replay a prior sweep report with validation against drift."""
+    report = _load_report_payload(args.report)
+    if "loss_sweep" not in report and "finite_key_sweep" not in report:
+        raise ValueError("Replay expects a sweep report with loss_sweep or finite_key_sweep.")
+    params = report.get("parameters")
+    if not isinstance(params, dict):
+        raise ValueError("Replay requires a report with parameters object.")
+
+    loss_min, _ = _resolve_replay_value("loss_min", args.loss_min, params)
+    loss_max, _ = _resolve_replay_value("loss_max", args.loss_max, params)
+    steps, _ = _resolve_replay_value("steps", args.steps, params)
+    flip_prob, _ = _resolve_replay_value("flip_prob", args.flip_prob, params)
+    pulses, _ = _resolve_replay_value("pulses", args.pulses, params)
+    trials, _ = _resolve_replay_value("trials", args.trials, params)
+    seed, _ = _resolve_replay_value("seed", args.seed, params)
+    attack, _ = _resolve_replay_value("attack", args.attack, params)
+    eta, _ = _resolve_replay_value("eta", args.eta, params)
+    p_bg, _ = _resolve_replay_value("p_bg", args.p_bg, params)
+
+    replay_args = argparse.Namespace(
+        cmd="sweep",
+        loss_min=loss_min,
+        loss_max=loss_max,
+        steps=steps,
+        flip_prob=flip_prob,
+        pulses=pulses,
+        n_sent=params.get("n_sent"),
+        rep_rate=params.get("rep_rate"),
+        rep_rate_hz=params.get("rep_rate_hz"),
+        pass_seconds=params.get("pass_seconds"),
+        target_bits=params.get("target_bits"),
+        seed=seed,
+        outdir=args.outdir,
+        eta=eta,
+        p_bg=p_bg,
+        attack=attack,
+        mu=params.get("attack_mu", 0.6),
+        timeshift_bias=params.get("timeshift_bias", 0.0),
+        blinding_mode=params.get("blinding_mode", "loud"),
+        blinding_prob=params.get("blinding_prob", 0.05),
+        leakage_fraction=params.get("leakage_fraction", 0.0),
+        eta_z=params.get("eta_z"),
+        eta_x=params.get("eta_x"),
+        trials=trials,
+        workers=params.get("workers", 1),
+        finite_key=bool(params.get("finite_key", False)),
+        eps_pe=params.get("eps_pe", 1e-10),
+        eps_sec=params.get("eps_sec", 1e-10),
+        eps_cor=params.get("eps_cor", 1e-15),
+        ec_efficiency=params.get("ec_efficiency", 1.16),
+        f_ec=params.get("f_ec"),
+        pe_frac=params.get("pe_frac", 0.5),
+        m_pe=params.get("m_pe"),
+        calibration_file=None,
+        replay_of=args.report,
+        replay_of_git_commit=report.get("git_commit"),
+    )
+    _validate_args(replay_args)
+    _run_sweep(replay_args)
+
+
 def _validate_args(args: argparse.Namespace) -> None:
     """Validate CLI arguments after parsing."""
     # Common validations for sweep/decoy-sweep commands
@@ -694,15 +803,15 @@ def _validate_args(args: argparse.Namespace) -> None:
             validate_int("trials", args.trials, min_value=1)
 
     # Common validations for all commands with sweep-style controls
-    if hasattr(args, "flip_prob"):
+    if hasattr(args, "flip_prob") and args.flip_prob is not None:
         validate_float("flip-prob", args.flip_prob, min_value=0.0, max_value=0.5)
-    if hasattr(args, "pulses"):
+    if hasattr(args, "pulses") and args.pulses is not None:
         validate_int("pulses", args.pulses, min_value=1)
-    if hasattr(args, "seed"):
+    if hasattr(args, "seed") and args.seed is not None:
         validate_seed(args.seed)
-    if hasattr(args, "eta"):
+    if hasattr(args, "eta") and args.eta is not None:
         validate_float("eta", args.eta, min_value=0.0, max_value=1.0)
-    if hasattr(args, "p_bg"):
+    if hasattr(args, "p_bg") and args.p_bg is not None:
         validate_float("p-bg", args.p_bg, min_value=0.0, max_value=1.0)
 
     # Command-specific validations
@@ -739,6 +848,25 @@ def _validate_args(args: argparse.Namespace) -> None:
             validate_float("eta-z", args.eta_z, min_value=0.0, max_value=1.0)
         if args.eta_x is not None:
             validate_float("eta-x", args.eta_x, min_value=0.0, max_value=1.0)
+    elif args.cmd == "replay":
+        if args.loss_min is not None:
+            validate_float("loss-min", args.loss_min, min_value=0.0)
+        if args.loss_max is not None:
+            validate_float("loss-max", args.loss_max, min_value=0.0)
+        if args.steps is not None:
+            validate_int("steps", args.steps, min_value=1)
+        if args.flip_prob is not None:
+            validate_float("flip-prob", args.flip_prob, min_value=0.0, max_value=0.5)
+        if args.pulses is not None:
+            validate_int("pulses", args.pulses, min_value=1)
+        if args.trials is not None:
+            validate_int("trials", args.trials, min_value=1)
+        if args.seed is not None:
+            validate_seed(args.seed)
+        if args.eta is not None:
+            validate_float("eta", args.eta, min_value=0.0, max_value=1.0)
+        if args.p_bg is not None:
+            validate_float("p-bg", args.p_bg, min_value=0.0, max_value=1.0)
     elif args.cmd == "decoy-sweep":
         validate_float("mu-s", args.mu_s, min_value=0.0)
         validate_float("mu-d", args.mu_d, min_value=0.0)
@@ -984,6 +1112,13 @@ def _attach_manifest_and_git(report: dict[str, Any]) -> None:
         report["git_commit"] = get_git_commit()
 
 
+def _attach_replay_metadata(report: dict[str, Any], args: argparse.Namespace) -> None:
+    replay_of = getattr(args, "replay_of", None)
+    if replay_of:
+        report["replay_of"] = replay_of
+        report["replay_of_git_commit"] = getattr(args, "replay_of_git_commit", None)
+
+
 def _print_sweep_summary(
     *,
     loss_min: float,
@@ -1214,6 +1349,8 @@ def _run_sweep(args: argparse.Namespace) -> None:
                 "rep_rate": args.rep_rate,
                 "pass_seconds": args.pass_seconds,
                 "trials": args.trials,
+                "seed": args.seed,
+                "workers": args.workers,
                 "eta": args.eta,
                 "eta_z": detector.eta_z,
                 "eta_x": detector.eta_x,
@@ -1335,6 +1472,9 @@ def _run_sweep(args: argparse.Namespace) -> None:
                 "n_sent": n_sent,
                 "rep_rate": args.rep_rate,
                 "pass_seconds": args.pass_seconds,
+                "trials": args.trials,
+                "seed": args.seed,
+                "workers": args.workers,
                 "eta": args.eta,
                 "eta_z": detector.eta_z,
                 "eta_x": detector.eta_x,
@@ -1368,6 +1508,7 @@ def _run_sweep(args: argparse.Namespace) -> None:
             report["calibration"] = calibration.get_metadata()
 
     _attach_manifest_and_git(report)
+    _attach_replay_metadata(report, args)
 
     with open(outdir / "reports" / "latest.json", "w") as f:
         json.dump(report, f, indent=2)
@@ -1582,6 +1723,9 @@ def _run_sweep_finite_key(
             "n_sent": n_sent,
             "rep_rate": args.rep_rate,
             "pass_seconds": args.pass_seconds,
+            "trials": args.trials,
+            "seed": args.seed,
+            "workers": args.workers,
             "eta": args.eta,
             "eta_z": detector.eta_z,
             "eta_x": detector.eta_x,
@@ -1612,6 +1756,7 @@ def _run_sweep_finite_key(
     }
 
     _attach_manifest_and_git(report)
+    _attach_replay_metadata(report, args)
 
     with open(outdir / "reports" / "latest.json", "w") as f:
         json.dump(report, f, indent=2)

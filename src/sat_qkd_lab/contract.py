@@ -38,6 +38,11 @@ CONTRACT_CHECKS = (
     "calibration.git_commit",
     "calibration.seed_policy",
     "calibration.source.type",
+    "calibration.source.dataset_path",
+    "calibration.source.dataset_hash_sha256",
+    "calibration.fit_method",
+    "calibration.fit_quality",
+    "calibration.notes",
     "calibration.parameters.eta",
     "calibration.parameters.p_bg",
     "calibration.parameters.flip_prob",
@@ -331,6 +336,52 @@ def validate_calibration_record(
         "source.type must be empirical/synthetic/prior",
         checks,
     )
+    if "dataset_path" in source:
+        _require(
+            isinstance(source.get("dataset_path"), str),
+            "calibration.source.dataset_path",
+            "source.dataset_path must be a string",
+            checks,
+        )
+    else:
+        checks.add("calibration.source.dataset_path")
+    if "dataset_hash_sha256" in source:
+        _require(
+            isinstance(source.get("dataset_hash_sha256"), str),
+            "calibration.source.dataset_hash_sha256",
+            "source.dataset_hash_sha256 must be a string",
+            checks,
+        )
+    else:
+        checks.add("calibration.source.dataset_hash_sha256")
+
+    if "fit_method" in record:
+        _require(
+            isinstance(record.get("fit_method"), dict),
+            "calibration.fit_method",
+            "fit_method must be an object",
+            checks,
+        )
+    else:
+        checks.add("calibration.fit_method")
+    if "fit_quality" in record:
+        _require(
+            isinstance(record.get("fit_quality"), dict),
+            "calibration.fit_quality",
+            "fit_quality must be an object",
+            checks,
+        )
+    else:
+        checks.add("calibration.fit_quality")
+    if "notes" in record:
+        _require(
+            isinstance(record.get("notes"), str),
+            "calibration.notes",
+            "notes must be a string",
+            checks,
+        )
+    else:
+        checks.add("calibration.notes")
 
     parameters = record.get("parameters")
     if not isinstance(parameters, dict):

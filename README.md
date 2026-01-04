@@ -57,14 +57,39 @@ test -x .venv/bin/python || $PY -m venv .venv
 Quick run examples:
 
 ```bash
+# BB84 sweep (simulated)
 ./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 200000
-# Mission narrative summary
+# Assumptions manifest (single source of truth)
+./py -m sat_qkd_lab.run assumptions
+# Mission narrative (simulated)
 ./py -m sat_qkd_lab.run mission
-# Same sweep, but include finite-key penalties (copy/paste friendly ε defaults)
+# Replay a prior sweep report without drift
+./py -m sat_qkd_lab.run replay --report reports/latest.json --outdir .
+# Finite-key sweep (simulated)
 ./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 500000 --finite-key --eps-pe 1e-10 --eps-sec 1e-10 --eps-cor 1e-15
-./py -m sat_qkd_lab.run pass-sweep --max-elevation 70 --pass-duration 300
-./py -m sat_qkd_lab.run experiment-run --n-blocks 20 --block-seconds 30 --outdir .
-./py -m sat_qkd_lab.run forecast-run --forecasts forecasts.json --outdir .
+# Decoy-state sweep (simulated)
+./py -m sat_qkd_lab.run decoy-sweep --loss-min 20 --loss-max 50 --steps 16 --pulses 200000
+# Attack comparison sweep (simulated)
+./py -m sat_qkd_lab.run attack-sweep --loss-min 20 --loss-max 50 --steps 9 --pulses 50000
+# Pass sweep with atmosphere flags (simulated)
+./py -m sat_qkd_lab.run pass-sweep --max-elevation 70 --pass-duration 300 --day --turbulence --sigma-ln 0.3
+# Experiment harness (help for inputs)
+./py -m sat_qkd_lab.run experiment-run --help
+# Forecast harness (help for inputs)
+./py -m sat_qkd_lab.run forecast-run --help
+# Calibration fitting (help for inputs)
+./py -m sat_qkd_lab.run calibration-fit --help
+# Constellation scheduler (help for inputs)
+./py -m sat_qkd_lab.run constellation-sweep --help
+# Clock sync estimator (help for inputs)
+./py -m sat_qkd_lab.run clock-sync --help
+# Sync estimate helper (help for inputs)
+./py -m sat_qkd_lab.run sync-estimate --help
+# OU fading simulator (help for inputs)
+./py -m sat_qkd_lab.run fading-ou --help
+# Basis bias simulator (help for inputs)
+./py -m sat_qkd_lab.run basis-bias --help
+# Coincidence simulation (simulated)
 ./py -m sat_qkd_lab.run coincidence-sim --loss-min 20 --loss-max 60 --steps 9 --outdir .
 ```
 
@@ -218,6 +243,7 @@ Detector background `p_bg` is defined as a probability **per pulse / per detecti
 
 - Python package under `/src/sat_qkd_lab`
 - CLI: `./py -m sat_qkd_lab.run <command> --help`
+- Replay sweeps without drift: `./py -m sat_qkd_lab.run replay --report reports/latest.json --outdir .`
 - Requirements: `pyproject.toml` (numpy, matplotlib)
 
 ### Features
@@ -263,6 +289,7 @@ Invalid inputs raise `ValueError` with the parameter name and invalid value.
 This ensures aborted trials contribute zero to aggregated statistics.
 
 **Link Budget** — The `link_budget.py` module is an **Option A scenario generator** that maps elevation angles to loss values for demonstration. It is *not* a physically accurate optical link model. See `optical_link.py` for documentation of what a proper Option B model would require.
+Link budget mapping is illustrative unless using Option B model.
 
 **Finite-Key Analysis** — The `--finite-key` flag enables finite-size security analysis using Hoeffding-type concentration bounds. This computes conservative secret key length estimates that account for statistical uncertainty in parameter estimation and explicit ε-budgeting:
 
@@ -364,6 +391,7 @@ Both return structured results with QBER, secret fraction, and key rate metrics.
 - **Polarization / basis bias:** enable `pass-sweep --pol-rotation --pol-rotation-max-deg --basis-bias-max`. Outputs include `pol.rotation_angle_deg`, `basis.bias_mean`, `basis.bias_std`, and time‑series `pol_rotation_deg`/`basis_bias`. Plot generated on run (Planned if not present in this checkout): `figures/pol_rotation_vs_elevation.png`.
 - **Calibration card:** `calibration-fit` writes `reports/latest_calibration_card.json` (Planned if not present in this checkout) with `model_card.fit.r2`, `model_card.fit.param_uncertainty`, `model_card.fim.cond`, `model_card.fim.identifiable`, and `model_card.identifiable`. Warnings are emitted when identifiability is low. Plots generated on run (Planned if not present in this checkout): `figures/calibration_quality_card.png`, `figures/calibration_residuals.png`.
 - **Assumptions manifest:** `./py -m sat_qkd_lab.run assumptions` prints a stable JSON manifest; `reports/latest.json` now embeds `assumptions_manifest` for auditability.
+- **Outputs (simulated):** `reports/latest.json` includes results plus `assumptions_manifest`; all outputs are simulated under the assumptions manifest.
 - **Blinding + JSON contract:** append‑only JSON keys, required units (Hz, seconds, bits, bps, degrees where used), and no label leakage unless `--unblind`. Tests cover `reports/latest.json`, `reports/latest_pass.json`, `reports/latest_experiment.json`, `reports/forecast_blinded.json` (Planned if not present), and `reports/latest_sync_params.json` (Planned if not present).
 - **Finite-key boundary:** outputs include `finite_key.bound`, `finite_key.status`, and `finite_key.reason`; insecure regimes return NO-SECRET-KEY with zero finite-key rates.
 - **Dashboard:** install with `./py -m pip install -e ".[dashboard]"` and launch via `./py -m sat_qkd_lab.dashboard` (blinded by default).
