@@ -54,6 +54,15 @@ test -x .venv/bin/python || $PY -m venv .venv
 ./pytest -q
 ```
 
+## CLI Examples
+
+All commands accept `--help` to display available flags, defaults, and usage examples:
+
+```bash
+./py -m sat_qkd_lab.run sweep --help
+./py -m sat_qkd_lab.run pass-sweep --help
+```
+
 Quick run examples:
 
 ```bash

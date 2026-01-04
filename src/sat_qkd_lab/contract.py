@@ -100,7 +100,7 @@ def _get_param_value(param: Any, field: str) -> float:
 
 
 def validate_latest_report_contract(report: Dict[str, Any], *, return_checks: bool = False) -> Set[str] | None:
-    """Validate reports/latest.json against docs/05_hardware_outputs.md."""
+    """Validate reports/latest.json against specs/contracts/hardware_outputs.md."""
     checks: Set[str] = set()
     _require(
         report.get("schema_version") == "0.4",
@@ -293,7 +293,7 @@ def validate_calibration_record(
     expected_schema_version: str,
     return_checks: bool = False,
 ) -> Set[str] | None:
-    """Validate calibration record against docs/06_calibration_hooks.md."""
+    """Validate calibration record against specs/contracts/calibration_hooks.md."""
     checks: Set[str] = set()
     _require(
         isinstance(record.get("calibration_version"), str),

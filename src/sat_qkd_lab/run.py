@@ -131,12 +131,25 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     # --- sweep command (original + extensions) ---
-    s = sub.add_parser("sweep", help="Sweep loss in dB and generate plots + report.")
-    s.add_argument("--loss-min", type=float, default=20.0)
-    s.add_argument("--loss-max", type=float, default=60.0)
-    s.add_argument("--steps", type=int, default=21)
-    s.add_argument("--flip-prob", type=float, default=0.005)
-    s.add_argument("--pulses", type=int, default=200_000)
+    s = sub.add_parser(
+        "sweep",
+        help="Sweep loss in dB and generate plots + report.",
+        epilog="Examples:\n"
+               "  ./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 200000\n"
+               "  ./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 500000 --finite-key\n"
+               "  ./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 200000 --attack pns --mu 0.6",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    s.add_argument("--loss-min", type=float, default=20.0,
+                   help="Minimum channel loss in dB (default: 20.0)")
+    s.add_argument("--loss-max", type=float, default=60.0,
+                   help="Maximum channel loss in dB (default: 60.0)")
+    s.add_argument("--steps", type=int, default=21,
+                   help="Number of loss values to sweep (default: 21)")
+    s.add_argument("--flip-prob", type=float, default=0.005,
+                   help="Intrinsic bit-flip probability (default: 0.005)")
+    s.add_argument("--pulses", type=int, default=200_000,
+                   help="Total pulses sent (default: 200000)")
     s.add_argument("--n-sent", type=int, default=None,
                    help="Total pulses sent (overrides --pulses if set)")
     s.add_argument("--rep-rate", type=float, default=None,
@@ -147,8 +160,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Pass duration in seconds used with --rep-rate")
     s.add_argument("--target-bits", type=int, default=None,
                    help="Target secret key volume in bits (computes required rep rate)")
-    s.add_argument("--seed", type=int, default=0)
-    s.add_argument("--outdir", type=str, default=".")
+    s.add_argument("--seed", type=int, default=0,
+                   help="Random seed for reproducibility (default: 0)")
+    s.add_argument("--outdir", type=str, default=".",
+                   help="Output directory for figures/reports (default: .)")
     # New detector parameters
     s.add_argument("--eta", type=float, default=DEFAULT_DETECTOR.eta,
                    help="Detector efficiency (0..1)")
@@ -198,14 +213,28 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Optional JSON file with calibration specs (off by default)")
 
     # --- decoy-sweep command ---
-    d = sub.add_parser("decoy-sweep", help="Decoy-state BB84 sweep over loss.")
-    d.add_argument("--loss-min", type=float, default=20.0)
-    d.add_argument("--loss-max", type=float, default=60.0)
-    d.add_argument("--steps", type=int, default=21)
-    d.add_argument("--flip-prob", type=float, default=0.005)
-    d.add_argument("--pulses", type=int, default=200_000)
-    d.add_argument("--seed", type=int, default=0)
-    d.add_argument("--outdir", type=str, default=".")
+    d = sub.add_parser(
+        "decoy-sweep",
+        help="Decoy-state BB84 sweep over loss.",
+        epilog="Examples:\n"
+               "  ./py -m sat_qkd_lab.run decoy-sweep --loss-min 20 --loss-max 50 --steps 16 --pulses 200000\n"
+               "  ./py -m sat_qkd_lab.run decoy-sweep --loss-min 20 --loss-max 50 --steps 16 --pulses 500000 --mu-s 0.6 --mu-d 0.1",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    d.add_argument("--loss-min", type=float, default=20.0,
+                   help="Minimum channel loss in dB (default: 20.0)")
+    d.add_argument("--loss-max", type=float, default=60.0,
+                   help="Maximum channel loss in dB (default: 60.0)")
+    d.add_argument("--steps", type=int, default=21,
+                   help="Number of loss values to sweep (default: 21)")
+    d.add_argument("--flip-prob", type=float, default=0.005,
+                   help="Intrinsic bit-flip probability (default: 0.005)")
+    d.add_argument("--pulses", type=int, default=200_000,
+                   help="Total pulses sent (default: 200000)")
+    d.add_argument("--seed", type=int, default=0,
+                   help="Random seed for reproducibility (default: 0)")
+    d.add_argument("--outdir", type=str, default=".",
+                   help="Output directory for figures/reports (default: .)")
     # Detector parameters
     d.add_argument("--eta", type=float, default=DEFAULT_DETECTOR.eta,
                    help="Detector efficiency (0..1)")
@@ -244,14 +273,28 @@ def build_parser() -> argparse.ArgumentParser:
                    help="X-basis detection efficiency (default: --eta)")
 
     # --- attack-sweep command ---
-    a = sub.add_parser("attack-sweep", help="Compare multiple attack modes over loss.")
-    a.add_argument("--loss-min", type=float, default=20.0)
-    a.add_argument("--loss-max", type=float, default=60.0)
-    a.add_argument("--steps", type=int, default=15)
-    a.add_argument("--flip-prob", type=float, default=0.005)
-    a.add_argument("--pulses", type=int, default=50_000)
-    a.add_argument("--seed", type=int, default=0)
-    a.add_argument("--outdir", type=str, default=".")
+    a = sub.add_parser(
+        "attack-sweep",
+        help="Compare multiple attack modes over loss.",
+        epilog="Examples:\n"
+               "  ./py -m sat_qkd_lab.run attack-sweep --loss-min 20 --loss-max 50 --steps 9 --pulses 50000\n"
+               "  ./py -m sat_qkd_lab.run attack-sweep --loss-min 20 --loss-max 50 --steps 9 --pulses 50000 --attacks none intercept_resend pns time_shift",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    a.add_argument("--loss-min", type=float, default=20.0,
+                   help="Minimum channel loss in dB (default: 20.0)")
+    a.add_argument("--loss-max", type=float, default=60.0,
+                   help="Maximum channel loss in dB (default: 60.0)")
+    a.add_argument("--steps", type=int, default=15,
+                   help="Number of loss values to sweep (default: 15)")
+    a.add_argument("--flip-prob", type=float, default=0.005,
+                   help="Intrinsic bit-flip probability (default: 0.005)")
+    a.add_argument("--pulses", type=int, default=50_000,
+                   help="Total pulses sent (default: 50000)")
+    a.add_argument("--seed", type=int, default=0,
+                   help="Random seed for reproducibility (default: 0)")
+    a.add_argument("--outdir", type=str, default=".",
+                   help="Output directory for figures/reports (default: .)")
     a.add_argument("--eta", type=float, default=DEFAULT_DETECTOR.eta,
                    help="Detector efficiency (0..1)")
     a.add_argument("--p-bg", type=float, default=DEFAULT_DETECTOR.p_bg,
@@ -277,7 +320,15 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Information leakage fraction (0..1)")
 
     # --- pass-sweep command ---
-    ps = sub.add_parser("pass-sweep", help="Simulate QKD during a satellite pass over elevation profile.")
+    ps = sub.add_parser(
+        "pass-sweep",
+        help="Simulate QKD during a satellite pass over elevation profile.",
+        epilog="Examples:\n"
+               "  ./py -m sat_qkd_lab.run pass-sweep --max-elevation 70 --pass-duration 300 --pulses 200000\n"
+               "  ./py -m sat_qkd_lab.run pass-sweep --max-elevation 70 --pass-duration 300 --pulses 200000 --day --turbulence --sigma-ln 0.3\n"
+               "  ./py -m sat_qkd_lab.run pass-sweep --max-elevation 70 --pass-duration 300 --rep-rate 1e5 --finite-key --eps-pe 1e-10",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ps.add_argument("--max-elevation", type=float, default=60.0,
                     help="Maximum elevation angle in degrees (default: 60)")
     ps.add_argument("--min-elevation", type=float, default=10.0,
@@ -559,7 +610,14 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Output directory for reports/figures (default: .)")
 
     # --- eb-sweep command ---
-    eb = sub.add_parser("eb-sweep", help="Entanglement-based QKD coincidence Monte Carlo sweep over loss.")
+    eb = sub.add_parser(
+        "eb-sweep",
+        help="Entanglement-based QKD coincidence Monte Carlo sweep over loss.",
+        epilog="Examples:\n"
+               "  ./py -m sat_qkd_lab.run eb-sweep --loss-min 20 --loss-max 60 --steps 21 --n-pairs 200000\n"
+               "  ./py -m sat_qkd_lab.run eb-sweep --loss-min 20 --loss-max 60 --steps 21 --n-pairs 500000 --finite-key --eps-pe 1e-10 --eps-sec 1e-10",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     eb.add_argument("--loss-min", type=float, default=20.0,
                     help="Minimum channel loss in dB (default: 20.0)")
     eb.add_argument("--loss-max", type=float, default=60.0,
@@ -602,7 +660,14 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Explicit parameter estimation sample size (overrides --pe-frac)")
 
     # --- cv-sweep command ---
-    cv = sub.add_parser("cv-sweep", help="CV-QKD (GG02) sweep over loss (scaffold/toy).")
+    cv = sub.add_parser(
+        "cv-sweep",
+        help="CV-QKD (GG02) sweep over loss (scaffold/toy).",
+        epilog="Examples:\n"
+               "  ./py -m sat_qkd_lab.run cv-sweep --loss-min 0 --loss-max 30 --steps 31\n"
+               "  ./py -m sat_qkd_lab.run cv-sweep --loss-min 0 --loss-max 30 --steps 31 --v-a 10.0 --xi 0.01 --eta 0.6",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     cv.add_argument("--loss-min", type=float, default=0.0,
                     help="Minimum channel loss in dB (default: 0.0)")
     cv.add_argument("--loss-max", type=float, default=30.0,
@@ -688,28 +753,57 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Abort if CHSH S below this threshold")
 
     # --- assumptions command ---
-    sub.add_parser("assumptions", help="Print assumptions manifest as JSON.")
+    sub.add_parser(
+        "assumptions",
+        help="Print assumptions manifest as JSON.",
+        epilog="Examples:\n"
+               "  ./py -m sat_qkd_lab.run assumptions",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
 
     # --- mission command ---
-    sub.add_parser("mission", help="Print a short simulated mission narrative.")
+    sub.add_parser(
+        "mission",
+        help="Print a short simulated mission narrative.",
+        epilog="Examples:\n"
+               "  ./py -m sat_qkd_lab.run mission",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
 
     # --- replay command ---
-    r = sub.add_parser("replay", help="Replay a prior sweep report without drift.")
+    r = sub.add_parser(
+        "replay",
+        help="Replay a prior sweep report without drift.",
+        epilog="Examples:\n"
+               "  ./py -m sat_qkd_lab.run replay --report reports/latest.json --outdir .\n"
+               "  ./py -m sat_qkd_lab.run replay --report reports/latest.json --loss-min 20 --loss-max 60 --steps 21",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     r.add_argument("--report", type=str, default="reports/latest.json",
                    help="Path to a prior report JSON (default: reports/latest.json)")
     r.add_argument("--outdir", type=str, default=".",
                    help="Output directory for figures/reports (default: .)")
-    r.add_argument("--loss-min", type=float, default=None)
-    r.add_argument("--loss-max", type=float, default=None)
-    r.add_argument("--steps", type=int, default=None)
-    r.add_argument("--flip-prob", type=float, default=None)
-    r.add_argument("--pulses", type=int, default=None)
-    r.add_argument("--trials", type=int, default=None)
-    r.add_argument("--seed", type=int, default=None)
+    r.add_argument("--loss-min", type=float, default=None,
+                   help="Minimum channel loss in dB (overrides report value if set)")
+    r.add_argument("--loss-max", type=float, default=None,
+                   help="Maximum channel loss in dB (overrides report value if set)")
+    r.add_argument("--steps", type=int, default=None,
+                   help="Number of loss values to sweep (overrides report value if set)")
+    r.add_argument("--flip-prob", type=float, default=None,
+                   help="Bit-flip probability (overrides report value if set)")
+    r.add_argument("--pulses", type=int, default=None,
+                   help="Total pulses sent (overrides report value if set)")
+    r.add_argument("--trials", type=int, default=None,
+                   help="Number of trials (overrides report value if set)")
+    r.add_argument("--seed", type=int, default=None,
+                   help="Random seed (overrides report value if set)")
     r.add_argument("--attack", type=str, default=None,
-                   choices=["none", "intercept_resend", "pns", "time_shift", "blinding"])
-    r.add_argument("--eta", type=float, default=None)
-    r.add_argument("--p-bg", type=float, default=None)
+                   choices=["none", "intercept_resend", "pns", "time_shift", "blinding"],
+                   help="Attack model (overrides report value if set)")
+    r.add_argument("--eta", type=float, default=None,
+                   help="Detector efficiency (overrides report value if set)")
+    r.add_argument("--p-bg", type=float, default=None,
+                   help="Background probability (overrides report value if set)")
 
     return p
 
