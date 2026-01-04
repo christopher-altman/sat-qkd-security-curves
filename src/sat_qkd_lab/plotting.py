@@ -24,6 +24,32 @@ def _key_rate_scale_settings(values: Sequence[float]) -> Tuple[str, Dict[str, fl
     return "linear", {"bottom": 0}
 
 
+def apply_instrument_style(ax) -> None:
+    """Apply instrument-grade styling: grid, tight layout, minimal visual clutter."""
+    ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+    ax.tick_params(labelsize=9)
+    for spine in ax.spines.values():
+        spine.set_linewidth(0.8)
+
+
+def set_simulated_title(ax, title: str) -> None:
+    """Set title with 'Simulated: ' prefix to clarify scenario-generation context."""
+    ax.set_title(f"Simulated: {title}", fontsize=11, fontweight='normal')
+
+
+def label_axes(ax, xlabel: str, ylabel: str) -> None:
+    """Label axes with units where applicable."""
+    ax.set_xlabel(xlabel, fontsize=10)
+    ax.set_ylabel(ylabel, fontsize=10)
+
+
+def safe_legend(ax, **kwargs) -> None:
+    """Place legend to minimize curve occlusion; use deterministic location."""
+    if 'loc' not in kwargs:
+        kwargs['loc'] = 'best'
+    ax.legend(**kwargs, fontsize=9, framealpha=0.95)
+
+
 def plot_key_metrics_vs_loss(
     records_no_attack: Sequence[Dict[str, Any]],
     records_attack: Sequence[Dict[str, Any]],
@@ -53,30 +79,30 @@ def plot_key_metrics_vs_loss(
     sf_no = _extract(records_no_attack, "secret_fraction")
     sf_ev = _extract(records_attack, "secret_fraction")
 
-    plt.figure()
-    plt.plot(loss, q_no, label="QBER (no attack)")
-    plt.plot(loss, q_ev, label="QBER (intercept-resend)")
-    plt.xlabel("Channel loss (dB)")
-    plt.ylabel("QBER")
+    fig, ax = plt.subplots()
+    ax.plot(loss, q_no, label="QBER (no attack)")
+    ax.plot(loss, q_ev, label="QBER (intercept-resend)")
+    label_axes(ax, "Channel loss (dB)", "QBER (unitless)")
     if attack_label and attack_label != "none":
-        plt.title(f"QBER vs loss (BB84, attack={attack_label})")
+        set_simulated_title(ax, f"QBER vs loss (BB84, attack={attack_label})")
     else:
-        plt.title("QBER vs loss (BB84)")
-    plt.legend()
+        set_simulated_title(ax, "QBER vs loss (BB84)")
+    safe_legend(ax)
+    apply_instrument_style(ax)
     q_path = f"{out_prefix}_qber_vs_loss.png"
-    plt.savefig(q_path, dpi=200, bbox_inches="tight")
-    plt.close()
+    fig.savefig(q_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
 
-    plt.figure()
-    plt.plot(loss, sf_no, label="Secret fraction (no attack)")
-    plt.plot(loss, sf_ev, label="Secret fraction (intercept-resend)")
-    plt.xlabel("Channel loss (dB)")
-    plt.ylabel("Asymptotic secret fraction")
+    fig, ax = plt.subplots()
+    ax.plot(loss, sf_no, label="Secret fraction (no attack)")
+    ax.plot(loss, sf_ev, label="Secret fraction (intercept-resend)")
+    label_axes(ax, "Channel loss (dB)", "Asymptotic secret fraction (unitless)")
     if attack_label and attack_label != "none":
-        plt.title(f"Secret fraction vs loss (BB84, attack={attack_label})")
+        set_simulated_title(ax, f"Secret fraction vs loss (BB84, attack={attack_label})")
     else:
-        plt.title("Secret fraction vs loss (BB84)")
-    plt.legend()
+        set_simulated_title(ax, "Secret fraction vs loss (BB84)")
+    safe_legend(ax)
+    apply_instrument_style(ax)
     # Canonical filename (cleaner than legacy key_key_fraction_vs_loss.png)
     k_path = f"{out_prefix}_fraction_vs_loss.png"
     plt.savefig(k_path, dpi=200, bbox_inches="tight")
@@ -1326,16 +1352,15 @@ def plot_eb_qber_vs_loss(
     loss = _extract(records, "loss_db")
     qber = _extract(records, "qber_mean")
 
-    plt.figure()
-    plt.plot(loss, qber, marker="o", markersize=4, label="QBER-equivalent")
-    plt.xlabel("Total channel loss (dB)")
-    plt.ylabel("QBER-equivalent")
-    plt.title("EB-QKD: QBER vs loss")
-    plt.ylim(0, 0.5)
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.savefig(out_path, dpi=200, bbox_inches="tight")
-    plt.close()
+    fig, ax = plt.subplots()
+    ax.plot(loss, qber, marker="o", markersize=4, label="QBER-equivalent")
+    label_axes(ax, "Total channel loss (dB)", "QBER-equivalent (unitless)")
+    set_simulated_title(ax, "EB-QKD: QBER vs loss")
+    ax.set_ylim(0, 0.5)
+    safe_legend(ax)
+    apply_instrument_style(ax)
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
     return out_path
 
 
@@ -1362,17 +1387,16 @@ def plot_eb_key_fraction_vs_loss(
     sf_estimate = _extract(records, "secret_fraction_estimate")
     sf_asymptotic = _extract(records, "secret_fraction_asymptotic")
 
-    plt.figure()
-    plt.plot(loss, sf_estimate, marker="o", markersize=4, label="Secret fraction (finite-key)")
-    plt.plot(loss, sf_asymptotic, marker="s", markersize=3, linestyle="--", alpha=0.7, label="Secret fraction (asymptotic)")
-    plt.xlabel("Total channel loss (dB)")
-    plt.ylabel("Secret fraction")
-    plt.title("EB-QKD: Secret fraction vs loss")
-    plt.ylim(0, 1.05)
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.savefig(out_path, dpi=200, bbox_inches="tight")
-    plt.close()
+    fig, ax = plt.subplots()
+    ax.plot(loss, sf_estimate, marker="o", markersize=4, label="Secret fraction (finite-key)")
+    ax.plot(loss, sf_asymptotic, marker="s", markersize=3, linestyle="--", alpha=0.7, label="Secret fraction (asymptotic)")
+    label_axes(ax, "Total channel loss (dB)", "Secret fraction (unitless)")
+    set_simulated_title(ax, "EB-QKD: Secret fraction vs loss")
+    ax.set_ylim(0, 1.05)
+    safe_legend(ax)
+    apply_instrument_style(ax)
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
     return out_path
 
 
@@ -1398,13 +1422,13 @@ def plot_eb_coincidence_rate_vs_loss(
     loss = _extract(records, "loss_db")
     coinc_rate = _extract(records, "coincidence_rate")
 
-    plt.figure()
-    plt.plot(loss, coinc_rate, marker="o", markersize=4)
-    plt.xlabel("Total channel loss (dB)")
-    plt.ylabel("Coincidence rate (per pair)")
-    plt.title("EB-QKD: Coincidence rate vs loss")
-    plt.yscale("log")
-    plt.grid(True, alpha=0.3, which="both")
-    plt.savefig(out_path, dpi=200, bbox_inches="tight")
-    plt.close()
+    fig, ax = plt.subplots()
+    ax.plot(loss, coinc_rate, marker="o", markersize=4)
+    label_axes(ax, "Total channel loss (dB)", "Coincidence rate (per pair, unitless)")
+    set_simulated_title(ax, "EB-QKD: Coincidence rate vs loss")
+    ax.set_yscale("log")
+    apply_instrument_style(ax)
+    ax.grid(True, alpha=0.3, which="both")
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
     return out_path

@@ -443,11 +443,11 @@ The model generates:
 - `figures/loss_vs_elevation.png` — Total link loss vs elevation (when `pass-sweep`)
 - `reports/latest.json` — Raw sweep metrics with schema version and timestamp
 
-**Figure 1. Estimated secret-key rate versus channel loss for BB84.** ([↑ featured figure](#featured-figure))  
-A Monte-Carlo sweep shows that link loss alone reduces detections but does not destroy secrecy until error rates dominate. Under an intercept–resend attack, the secret-key fraction collapses to zero at moderate loss even while sifted bits remain non-zero, revealing the security cliff where privacy amplification can no longer extract secrecy.
+**Figure 1. Estimated secret-key rate versus channel loss for BB84.** ([↑ featured figure](#featured-figure))
+X-axis: channel loss (dB). Y-axis: secret fraction (unitless). Simulated under the assumptions manifest. A scenario-generator sweep shows that link loss alone reduces detections but does not destroy secrecy until error rates dominate. Under an intercept–resend attack, the secret-key fraction collapses to zero at moderate loss even while sifted bits remain non-zero, revealing the security cliff where privacy amplification can no longer extract secrecy.
 
-**Figure 2. Quantum Bit Error Rate (QBER) versus channel loss for BB84.** ([↑ featured figure](#featured-figure))  
-Without attack, intrinsic measurement noise keeps QBER low across loss. An intercept–resend adversary injects a strong QBER signature, driving errors beyond the tolerable entropy budget. The plotted spikes illustrate the detectable breakage regime that classical throughput monitors would miss without explicit QBER estimation.
+**Figure 2. Quantum Bit Error Rate (QBER) versus channel loss for BB84.** ([↑ featured figure](#featured-figure))
+X-axis: channel loss (dB). Y-axis: QBER (unitless). Simulated under the assumptions manifest. Without attack, intrinsic measurement noise keeps QBER low across loss. An intercept–resend adversary injects a strong QBER signature, driving errors beyond the tolerable entropy budget. The plotted spikes illustrate the detectable breakage regime that classical throughput monitors would miss without explicit QBER estimation.
 
 ### JSON Output Schema (v0.4)
 
