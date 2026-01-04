@@ -60,6 +60,9 @@ from .plotting import (
     plot_polarization_drift_vs_time,
     plot_compensation_residuals,
     plot_pol_rotation_vs_elevation,
+    plot_eb_qber_vs_loss,
+    plot_eb_key_fraction_vs_loss,
+    plot_eb_coincidence_rate_vs_loss,
 )
 from .free_space_link import FreeSpaceLinkParams, generate_elevation_profile
 from .detector import DetectorParams, DEFAULT_DETECTOR
@@ -117,6 +120,7 @@ from .polarization_drift import (
     simulate_polarization_drift,
     compensate_polarization_drift,
 )
+from .eb_coincidence import sweep_eb_coincidence_loss
 from .git_meta import get_git_commit
 
 
@@ -544,6 +548,49 @@ def build_parser() -> argparse.ArgumentParser:
     bb.add_argument("--outdir", type=str, default=".",
                     help="Output directory for reports/figures (default: .)")
 
+    # --- eb-sweep command ---
+    eb = sub.add_parser("eb-sweep", help="Entanglement-based QKD coincidence Monte Carlo sweep over loss.")
+    eb.add_argument("--loss-min", type=float, default=20.0,
+                    help="Minimum channel loss in dB (default: 20.0)")
+    eb.add_argument("--loss-max", type=float, default=60.0,
+                    help="Maximum channel loss in dB (default: 60.0)")
+    eb.add_argument("--steps", type=int, default=21,
+                    help="Number of loss values to sweep (default: 21)")
+    eb.add_argument("--flip-prob", type=float, default=0.005,
+                    help="Intrinsic bit-flip probability (default: 0.005)")
+    eb.add_argument("--n-pairs", type=int, default=200_000,
+                    help="Entangled pairs generated per loss value (default: 200000)")
+    eb.add_argument("--seed", type=int, default=0,
+                    help="Random seed for reproducibility (default: 0)")
+    eb.add_argument("--outdir", type=str, default=".",
+                    help="Output directory for reports/figures (default: .)")
+    eb.add_argument("--eta", type=float, default=DEFAULT_DETECTOR.eta,
+                    help="Detector efficiency for both Alice and Bob (default: 0.2)")
+    eb.add_argument("--eta-alice", type=float, default=None,
+                    help="Alice detector efficiency (overrides --eta if set)")
+    eb.add_argument("--eta-bob", type=float, default=None,
+                    help="Bob detector efficiency (overrides --eta if set)")
+    eb.add_argument("--p-bg", type=float, default=DEFAULT_DETECTOR.p_bg,
+                    help="Background probability for both detectors (default: 1e-4)")
+    eb.add_argument("--p-bg-alice", type=float, default=None,
+                    help="Alice background probability (overrides --p-bg if set)")
+    eb.add_argument("--p-bg-bob", type=float, default=None,
+                    help="Bob background probability (overrides --p-bg if set)")
+    eb.add_argument("--finite-key", action="store_true",
+                    help="Enable finite-key analysis")
+    eb.add_argument("--eps-pe", type=float, default=1e-10,
+                    help="Parameter estimation failure probability (default: 1e-10)")
+    eb.add_argument("--eps-sec", type=float, default=1e-10,
+                    help="Secrecy failure probability (default: 1e-10)")
+    eb.add_argument("--eps-cor", type=float, default=1e-15,
+                    help="Correctness failure probability (default: 1e-15)")
+    eb.add_argument("--ec-efficiency", type=float, default=1.16,
+                    help="Error correction efficiency >= 1.0 (default: 1.16)")
+    eb.add_argument("--pe-frac", type=float, default=0.5,
+                    help="Fraction of sifted bits for parameter estimation (default: 0.5)")
+    eb.add_argument("--m-pe", type=int, default=None,
+                    help="Explicit parameter estimation sample size (overrides --pe-frac)")
+
     # --- coincidence-sim command ---
     cs = sub.add_parser("coincidence-sim", help="Simulate time-tagged coincidences and CAR vs loss.")
     cs.add_argument("--loss-min", type=float, default=20.0)
@@ -669,6 +716,8 @@ def main() -> None:
         _run_fading_ou(args)
     elif args.cmd == "basis-bias":
         _run_basis_bias(args)
+    elif args.cmd == "eb-sweep":
+        _run_eb_sweep(args)
     elif args.cmd == "assumptions":
         _run_assumptions()
     elif args.cmd == "mission":
@@ -1077,6 +1126,25 @@ def _validate_args(args: argparse.Namespace) -> None:
         validate_float("time-step", args.time_step, min_value=1e-6)
         validate_float("max-bias", args.max_bias, min_value=-0.95, max_value=0.95)
         validate_float("rotation-deg", args.rotation_deg, min_value=0.0)
+    elif args.cmd == "eb-sweep":
+        validate_float("loss-min", args.loss_min, min_value=0.0)
+        validate_float("loss-max", args.loss_max, min_value=0.0)
+        validate_int("steps", args.steps, min_value=2)
+        validate_float("flip-prob", args.flip_prob, min_value=0.0, max_value=0.5)
+        validate_int("n-pairs", args.n_pairs, min_value=1)
+        validate_seed(args.seed)
+        validate_float("eta", args.eta, min_value=0.0, max_value=1.0)
+        if args.eta_alice is not None:
+            validate_float("eta-alice", args.eta_alice, min_value=0.0, max_value=1.0)
+        if args.eta_bob is not None:
+            validate_float("eta-bob", args.eta_bob, min_value=0.0, max_value=1.0)
+        validate_float("p-bg", args.p_bg, min_value=0.0, max_value=1.0)
+        if args.p_bg_alice is not None:
+            validate_float("p-bg-alice", args.p_bg_alice, min_value=0.0, max_value=1.0)
+        if args.p_bg_bob is not None:
+            validate_float("p-bg-bob", args.p_bg_bob, min_value=0.0, max_value=1.0)
+        if args.loss_min > args.loss_max:
+            raise ValueError("loss-min must be <= loss-max")
 
 
 def _resolve_n_sent_for_sweep(args: argparse.Namespace) -> int:
@@ -3533,6 +3601,136 @@ def _run_fading_ou(args: argparse.Namespace) -> None:
         json.dump(report, f, indent=2)
         f.write("\n")
     print("Wrote:", report_path)
+
+
+def _run_eb_sweep(args: argparse.Namespace) -> None:
+    """Execute EB-QKD coincidence Monte Carlo sweep."""
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    (outdir / "figures").mkdir(exist_ok=True)
+    (outdir / "reports").mkdir(exist_ok=True)
+
+    # Create detector params for Alice and Bob
+    eta_alice = args.eta_alice if args.eta_alice is not None else args.eta
+    eta_bob = args.eta_bob if args.eta_bob is not None else args.eta
+    p_bg_alice = args.p_bg_alice if args.p_bg_alice is not None else args.p_bg
+    p_bg_bob = args.p_bg_bob if args.p_bg_bob is not None else args.p_bg
+    
+    detector_alice = DetectorParams(eta=eta_alice, p_bg=p_bg_alice)
+    detector_bob = DetectorParams(eta=eta_bob, p_bg=p_bg_bob)
+
+    # Build finite-key params if enabled
+    finite_key_params = None
+    if args.finite_key:
+        f_ec = args.ec_efficiency
+        finite_key_params = FiniteKeyParams(
+            eps_pe=args.eps_pe,
+            eps_sec=args.eps_sec,
+            eps_cor=args.eps_cor,
+            ec_efficiency=f_ec,
+            pe_frac=args.pe_frac,
+            m_pe=args.m_pe,
+        )
+
+    print(f"Running EB-QKD coincidence Monte Carlo sweep over loss")
+    print(f"  Loss range: {args.loss_min:.1f} to {args.loss_max:.1f} dB, {args.steps} steps")
+    print(f"  Alice: eta={eta_alice:.3f}, p_bg={p_bg_alice:.4g}")
+    print(f"  Bob: eta={eta_bob:.3f}, p_bg={p_bg_bob:.4g}")
+    print(f"  Pairs per point: {args.n_pairs}, seed: {args.seed}")
+
+    # Run EB sweep
+    loss_values = np.linspace(args.loss_min, args.loss_max, args.steps)
+    results = sweep_eb_coincidence_loss(
+        loss_db_values=loss_values,
+        n_pairs=args.n_pairs,
+        flip_prob=args.flip_prob,
+        detector_alice=detector_alice,
+        detector_bob=detector_bob,
+        finite_key=finite_key_params,
+        seed=args.seed,
+    )
+
+    # Generate plots
+    qber_path = plot_eb_qber_vs_loss(
+        results,
+        str(outdir / "figures" / "eb_qber_vs_loss.png"),
+    )
+    print("Plot:", qber_path)
+
+    key_frac_path = plot_eb_key_fraction_vs_loss(
+        results,
+        str(outdir / "figures" / "eb_key_fraction_vs_loss.png"),
+    )
+    print("Plot:", key_frac_path)
+
+    coinc_rate_path = plot_eb_coincidence_rate_vs_loss(
+        results,
+        str(outdir / "figures" / "eb_coincidence_rate_vs_loss.png"),
+    )
+    print("Plot:", coinc_rate_path)
+
+    # Build report
+    report_path = outdir / "reports" / "latest.json"
+    if report_path.exists():
+        with open(report_path) as f:
+            report = json.load(f)
+    else:
+        report = {}
+
+    # Update schema version and timestamp
+    report["schema_version"] = SCHEMA_VERSION
+    report["generated_utc"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    # Add EB coincidence section
+    report["eb_coincidence_sweep"] = {
+        "results": results,
+        "parameters": {
+            "loss_min": args.loss_min,
+            "loss_max": args.loss_max,
+            "steps": args.steps,
+            "flip_prob": args.flip_prob,
+            "n_pairs": args.n_pairs,
+            "seed": args.seed,
+            "eta_alice": eta_alice,
+            "eta_bob": eta_bob,
+            "p_bg_alice": p_bg_alice,
+            "p_bg_bob": p_bg_bob,
+            "finite_key": bool(args.finite_key),
+        },
+    }
+
+    # Add finite-key parameters if enabled
+    if args.finite_key:
+        report["eb_coincidence_sweep"]["parameters"]["eps_pe"] = args.eps_pe
+        report["eb_coincidence_sweep"]["parameters"]["eps_sec"] = args.eps_sec
+        report["eb_coincidence_sweep"]["parameters"]["eps_cor"] = args.eps_cor
+        report["eb_coincidence_sweep"]["parameters"]["ec_efficiency"] = args.ec_efficiency
+        report["eb_coincidence_sweep"]["parameters"]["pe_frac"] = args.pe_frac
+        if args.m_pe is not None:
+            report["eb_coincidence_sweep"]["parameters"]["m_pe"] = args.m_pe
+
+    # Update artifacts
+    if "artifacts" not in report:
+        report["artifacts"] = {}
+    report["artifacts"]["eb_qber_plot"] = "eb_qber_vs_loss.png"
+    report["artifacts"]["eb_key_fraction_plot"] = "eb_key_fraction_vs_loss.png"
+    report["artifacts"]["eb_coincidence_rate_plot"] = "eb_coincidence_rate_vs_loss.png"
+
+    _attach_manifest_and_git(report)
+
+    with open(report_path, "w") as f:
+        json.dump(report, f, indent=2)
+        f.write("\n")  # Ensure trailing newline
+    print("Wrote:", report_path)
+
+    # Print summary
+    qber_vals = [r["qber_mean"] for r in results]
+    sf_vals = [r["secret_fraction_estimate"] for r in results]
+    coinc_vals = [r["coincidence_rate"] for r in results]
+    print("EB-QKD sweep summary")
+    print(f"  QBER range: {min(qber_vals):.6g} to {max(qber_vals):.6g}")
+    print(f"  Secret fraction range: {min(sf_vals):.6g} to {max(sf_vals):.6g}")
+    print(f"  Coincidence rate range: {min(coinc_vals):.6g} to {max(coinc_vals):.6g}")
 
 
 def _run_basis_bias(args: argparse.Namespace) -> None:

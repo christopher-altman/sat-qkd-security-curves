@@ -1300,3 +1300,111 @@ def plot_qber_headroom_vs_loss(
         plt.close()
 
     return out_path
+
+
+# --- EB-QKD Plotting ---
+
+def plot_eb_qber_vs_loss(
+    records: Sequence[Dict[str, Any]],
+    out_path: str,
+) -> str:
+    """
+    Plot EB-QKD QBER-equivalent vs channel loss.
+
+    Parameters
+    ----------
+    records : Sequence[Dict[str, Any]]
+        EB coincidence sweep results.
+    out_path : str
+        Output path for the plot.
+
+    Returns
+    -------
+    str
+        Path to the saved plot.
+    """
+    loss = _extract(records, "loss_db")
+    qber = _extract(records, "qber_mean")
+
+    plt.figure()
+    plt.plot(loss, qber, marker="o", markersize=4, label="QBER-equivalent")
+    plt.xlabel("Total channel loss (dB)")
+    plt.ylabel("QBER-equivalent")
+    plt.title("EB-QKD: QBER vs loss")
+    plt.ylim(0, 0.5)
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    return out_path
+
+
+def plot_eb_key_fraction_vs_loss(
+    records: Sequence[Dict[str, Any]],
+    out_path: str,
+) -> str:
+    """
+    Plot EB-QKD secret fraction estimate vs channel loss.
+
+    Parameters
+    ----------
+    records : Sequence[Dict[str, Any]]
+        EB coincidence sweep results.
+    out_path : str
+        Output path for the plot.
+
+    Returns
+    -------
+    str
+        Path to the saved plot.
+    """
+    loss = _extract(records, "loss_db")
+    sf_estimate = _extract(records, "secret_fraction_estimate")
+    sf_asymptotic = _extract(records, "secret_fraction_asymptotic")
+
+    plt.figure()
+    plt.plot(loss, sf_estimate, marker="o", markersize=4, label="Secret fraction (finite-key)")
+    plt.plot(loss, sf_asymptotic, marker="s", markersize=3, linestyle="--", alpha=0.7, label="Secret fraction (asymptotic)")
+    plt.xlabel("Total channel loss (dB)")
+    plt.ylabel("Secret fraction")
+    plt.title("EB-QKD: Secret fraction vs loss")
+    plt.ylim(0, 1.05)
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    return out_path
+
+
+def plot_eb_coincidence_rate_vs_loss(
+    records: Sequence[Dict[str, Any]],
+    out_path: str,
+) -> str:
+    """
+    Plot EB-QKD coincidence rate vs channel loss.
+
+    Parameters
+    ----------
+    records : Sequence[Dict[str, Any]]
+        EB coincidence sweep results.
+    out_path : str
+        Output path for the plot.
+
+    Returns
+    -------
+    str
+        Path to the saved plot.
+    """
+    loss = _extract(records, "loss_db")
+    coinc_rate = _extract(records, "coincidence_rate")
+
+    plt.figure()
+    plt.plot(loss, coinc_rate, marker="o", markersize=4)
+    plt.xlabel("Total channel loss (dB)")
+    plt.ylabel("Coincidence rate (per pair)")
+    plt.title("EB-QKD: Coincidence rate vs loss")
+    plt.yscale("log")
+    plt.grid(True, alpha=0.3, which="both")
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    return out_path
