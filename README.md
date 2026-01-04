@@ -12,7 +12,9 @@
 [![Website](https://img.shields.io/badge/website-christopheraltman.com-green)](https://www.christopheraltman.com)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Altman-blue?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/Altman)
 
+
 > **Abstract.** In satellite QKD operations, the key failure mode is “bits without secrecy.” We propose and validate a telemetry-to-secrecy pipeline that maps pass-time observables and forecast proxies, together with link dynamics, to finite-key secret-key-rate lower bounds (with explicit ε-budget allocation), yielding actionable go/no-go and sensitivity surfaces.
+
 
 <a id="featured-figure"></a>
 
