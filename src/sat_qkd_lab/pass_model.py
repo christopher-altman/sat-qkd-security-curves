@@ -152,6 +152,7 @@ def compute_pass_records(
     records: List[Dict[str, Any]] = []
     total_bits = 0.0
     key_rate_bps_values: List[float] = []
+    key_rate_per_pulse_values: List[float] = []
     secret_bits_dt_values: List[float] = []
 
     rng_fading = np.random.default_rng(fading.seed) if fading is not None else None
@@ -347,6 +348,7 @@ def compute_pass_records(
         records.append(record)
         total_bits += record["secret_bits_dt"]
         key_rate_bps_values.append(record["key_rate_bps"])
+        key_rate_per_pulse_values.append(record["key_rate_per_pulse"])
         secret_bits_dt_values.append(record["secret_bits_dt"])
 
     secure_mask = np.array(secret_bits_dt_values) > 0.0
@@ -354,24 +356,37 @@ def compute_pass_records(
         idx = np.where(secure_mask)[0]
         start = float(time_s[idx[0]])
         end = float(time_s[idx[-1]])
+        start_elev = float(elevation_deg[idx[0]])
+        end_elev = float(elevation_deg[idx[-1]])
         secure_window_seconds = float((idx[-1] - idx[0] + 1) * params.dt_seconds)
         secure_window_seconds_total = float(np.sum(secure_mask) * params.dt_seconds)
         transitions = np.diff(secure_mask.astype(int))
         secure_segments = int(np.sum(transitions == 1) + (1 if secure_mask[0] else 0))
+        key_rate_in_window = [key_rate_per_pulse_values[i] for i in idx]
+        mean_key_rate_in_window = float(np.mean(key_rate_in_window)) if key_rate_in_window else 0.0
     else:
         start = None
         end = None
+        start_elev = float(params.min_elevation_deg)
+        end_elev = float(params.min_elevation_deg)
         secure_window_seconds = 0.0
         secure_window_seconds_total = 0.0
         secure_segments = 0
+        mean_key_rate_in_window = 0.0
 
     summary = {
         "qber_abort": float(params.qber_abort_threshold),
         "peak_key_rate_bps": float(max(key_rate_bps_values)) if key_rate_bps_values else 0.0,
+        "peak_key_rate": float(max(key_rate_per_pulse_values)) if key_rate_per_pulse_values else 0.0,
         "total_secret_bits": float(total_bits),
         "secure_window_seconds": float(secure_window_seconds),
         "secure_window_seconds_total": float(secure_window_seconds_total),
         "secure_window_segments": int(secure_segments),
+        "secure_start_s": float(start) if start is not None else 0.0,
+        "secure_end_s": float(end) if end is not None else 0.0,
+        "secure_start_elevation_deg": float(start_elev),
+        "secure_end_elevation_deg": float(end_elev),
+        "mean_key_rate_in_window": float(mean_key_rate_in_window),
         "secure_window": {
             "t_start_seconds": start,
             "t_end_seconds": end,

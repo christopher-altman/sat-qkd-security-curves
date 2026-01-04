@@ -2,6 +2,7 @@ from __future__ import annotations
 import argparse
 import math
 import json
+import sys
 from typing import Any
 from datetime import datetime, timezone
 import numpy as np
@@ -10,6 +11,7 @@ from pathlib import Path
 SCHEMA_VERSION = "0.4"
 
 from .helpers import validate_int, validate_float, validate_seed
+from .assumptions import build_assumptions_manifest
 from .finite_key import FiniteKeyParams
 from .sweep import (
     sweep_loss,
@@ -115,6 +117,7 @@ from .polarization_drift import (
     simulate_polarization_drift,
     compensate_polarization_drift,
 )
+from .git_meta import get_git_commit
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -606,6 +609,12 @@ def build_parser() -> argparse.ArgumentParser:
     cs.add_argument("--min-chsh-s", type=float, default=2.0,
                     help="Abort if CHSH S below this threshold")
 
+    # --- assumptions command ---
+    sub.add_parser("assumptions", help="Print assumptions manifest as JSON.")
+
+    # --- mission command ---
+    sub.add_parser("mission", help="Print a short simulated mission narrative.")
+
     return p
 
 
@@ -642,6 +651,34 @@ def main() -> None:
         _run_fading_ou(args)
     elif args.cmd == "basis-bias":
         _run_basis_bias(args)
+    elif args.cmd == "assumptions":
+        _run_assumptions()
+    elif args.cmd == "mission":
+        _run_mission()
+
+
+def _run_assumptions() -> None:
+    """Print assumptions manifest for auditability."""
+    manifest = build_assumptions_manifest(SCHEMA_VERSION)
+    print(json.dumps(manifest, indent=2, sort_keys=True))
+    print("Assumptions manifest written as JSON (see stdout).", file=sys.stderr)
+
+
+def _run_mission() -> None:
+    """Print a short simulated mission narrative."""
+    lines = [
+        "simulated mission narrative",
+        "this tool produces simulated security curves, not measured hardware performance.",
+        "assumptions: see assumptions manifest; run `./py -m sat_qkd_lab.run assumptions`.",
+        "link budget mapping is illustrative unless using Option B model.",
+        "loss sweep plots show qber and key-rate vs loss to compare scenarios.",
+        "pass-sweep plots show time-varying loss and key-rate over a satellite pass.",
+        "finite-key mode tightens rates for statistical uncertainty; asymptotic is an upper bound.",
+        "security cliff: a narrow loss/qber region where secret fraction drops to zero.",
+        "operationally, the cliff marks where key production ceases despite detections.",
+        "treat all outputs as simulated planning aids, not deployment promises.",
+    ]
+    print("\n".join(lines))
 
 
 def _validate_args(args: argparse.Namespace) -> None:
@@ -938,6 +975,68 @@ def _load_calibration_model(args: argparse.Namespace) -> Any:
         print(f"Loading calibration from {args.calibration_file}")
         return CalibrationModel.from_file(args.calibration_file)
     return None
+
+
+def _attach_manifest_and_git(report: dict[str, Any]) -> None:
+    if "assumptions_manifest" not in report:
+        report["assumptions_manifest"] = build_assumptions_manifest(SCHEMA_VERSION)
+    if "git_commit" not in report:
+        report["git_commit"] = get_git_commit()
+
+
+def _print_sweep_summary(
+    *,
+    loss_min: float,
+    loss_max: float,
+    pulses: int,
+    trials: int,
+    seed_policy: str,
+    records: list[dict[str, Any]],
+    qber_field: str,
+    key_rate_field: str,
+    qber_ci_low_field: str | None = None,
+    qber_ci_high_field: str | None = None,
+    key_rate_ci_low_field: str | None = None,
+    key_rate_ci_high_field: str | None = None,
+) -> None:
+    if not records:
+        return
+
+    qber_vals = [float(rec[qber_field]) for rec in records if qber_field in rec]
+    key_vals = [float(rec[key_rate_field]) for rec in records if key_rate_field in rec]
+    if not qber_vals or not key_vals:
+        return
+
+    def _stat_line(label: str, values: list[float]) -> str:
+        return (
+            f"{label} min/median/max: "
+            f"{float(np.min(values)):.6g} / "
+            f"{float(np.median(values)):.6g} / "
+            f"{float(np.max(values)):.6g}"
+        )
+
+    print("simulated sweep summary")
+    print(
+        "loss range: "
+        f"{loss_min:.6g}..{loss_max:.6g} dB | "
+        f"pulses: {pulses} | trials: {trials} | seed policy: {seed_policy}"
+    )
+    print(_stat_line("qber_mean", qber_vals))
+    print(_stat_line("key_rate_per_pulse", key_vals))
+
+    if trials > 1 and qber_ci_low_field and qber_ci_high_field:
+        qber_ci_low_vals = [float(rec[qber_ci_low_field]) for rec in records if qber_ci_low_field in rec]
+        qber_ci_high_vals = [float(rec[qber_ci_high_field]) for rec in records if qber_ci_high_field in rec]
+        if qber_ci_low_vals and qber_ci_high_vals:
+            print(_stat_line("qber_ci_low", qber_ci_low_vals))
+            print(_stat_line("qber_ci_high", qber_ci_high_vals))
+
+    if trials > 1 and key_rate_ci_low_field and key_rate_ci_high_field:
+        key_ci_low_vals = [float(rec[key_rate_ci_low_field]) for rec in records if key_rate_ci_low_field in rec]
+        key_ci_high_vals = [float(rec[key_rate_ci_high_field]) for rec in records if key_rate_ci_high_field in rec]
+        if key_ci_low_vals and key_ci_high_vals:
+            print(_stat_line("key_rate_per_pulse_ci_low", key_ci_low_vals))
+            print(_stat_line("key_rate_per_pulse_ci_high", key_ci_high_vals))
 
 
 def _resolve_pass_pulse_accounting(args: argparse.Namespace, n_steps: int) -> tuple[list[int], int]:
@@ -1268,10 +1367,26 @@ def _run_sweep(args: argparse.Namespace) -> None:
         if calibration:
             report["calibration"] = calibration.get_metadata()
 
+    _attach_manifest_and_git(report)
+
     with open(outdir / "reports" / "latest.json", "w") as f:
         json.dump(report, f, indent=2)
         f.write("\n")  # Ensure trailing newline
     print("Wrote:", outdir / "reports" / "latest.json")
+    _print_sweep_summary(
+        loss_min=float(args.loss_min),
+        loss_max=float(args.loss_max),
+        pulses=int(n_sent),
+        trials=int(args.trials),
+        seed_policy="fixed",
+        records=no_attack,
+        qber_field="qber_mean" if args.trials > 1 else "qber",
+        key_rate_field="key_rate_per_pulse_mean" if args.trials > 1 else "key_rate_per_pulse",
+        qber_ci_low_field="qber_ci_low" if args.trials > 1 else None,
+        qber_ci_high_field="qber_ci_high" if args.trials > 1 else None,
+        key_rate_ci_low_field="key_rate_per_pulse_ci_low" if args.trials > 1 else None,
+        key_rate_ci_high_field="key_rate_per_pulse_ci_high" if args.trials > 1 else None,
+    )
 
 
 def _run_attack_sweep(args: argparse.Namespace) -> None:
@@ -1342,10 +1457,22 @@ def _run_attack_sweep(args: argparse.Namespace) -> None:
         leak_vals = [rec.get("leakage_budget_bits", 0.0) for rec in attack]
         report["parameters"]["leakage_budget_bits"] = float(np.mean(leak_vals)) if leak_vals else 0.0
 
+    _attach_manifest_and_git(report)
+
     with open(outdir / "reports" / "latest.json", "w") as f:
         json.dump(report, f, indent=2)
         f.write("\n")
     print("Wrote:", outdir / "reports" / "latest.json")
+    _print_sweep_summary(
+        loss_min=float(args.loss_min),
+        loss_max=float(args.loss_max),
+        pulses=int(n_sent),
+        trials=1,
+        seed_policy="fixed",
+        records=no_attack,
+        qber_field="qber",
+        key_rate_field="key_rate_per_pulse_asymptotic",
+    )
 
 
 def _run_sweep_finite_key(
@@ -1483,6 +1610,8 @@ def _run_sweep_finite_key(
             "finite_key_rate_vs_blocksize_plot": "finite_key_rate_vs_blocksize.png",
         },
     }
+
+    _attach_manifest_and_git(report)
 
     with open(outdir / "reports" / "latest.json", "w") as f:
         json.dump(report, f, indent=2)
@@ -1628,6 +1757,8 @@ def _run_decoy_sweep(args: argparse.Namespace) -> None:
     report["artifacts"]["decoy_key_rate_plot"] = "decoy_key_rate_vs_loss.png"
     if realism_enabled:
         report["artifacts"]["decoy_key_rate_realism_plot"] = "decoy_key_rate_vs_loss_realism.png"
+
+    _attach_manifest_and_git(report)
 
     with open(report_path, "w") as f:
         json.dump(report, f, indent=2)
@@ -2045,6 +2176,31 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
             "records": records_mc,
             "summary": summary_mc,
         },
+        "field_classification": {
+            "schema_version": "placeholder",
+            "generated_utc": "inferred",
+            "parameters.pass_duration_s": "placeholder",
+            "parameters.time_step_s": "placeholder",
+            "parameters.pulses": "placeholder",
+            "parameters.rep_rate": "placeholder",
+            "parameters.eta": "placeholder",
+            "parameters.p_bg": "placeholder",
+            "parameters.flip_prob": "placeholder",
+            "pass_sweep.records.loss_db": "simulated",
+            "pass_sweep.records.qber": "inferred",
+            "pass_sweep.records.secret_fraction": "inferred",
+            "pass_sweep.records.key_rate_per_pulse": "inferred",
+            "pass_sweep.records.n_secret_est": "inferred",
+            "pass_sweep.records.aborted": "inferred",
+            "pass_sweep.summary.secure_window_seconds": "inferred",
+            "pass_sweep.summary.secure_start_s": "inferred",
+            "pass_sweep.summary.secure_end_s": "inferred",
+            "pass_sweep.summary.secure_start_elevation_deg": "inferred",
+            "pass_sweep.summary.secure_end_elevation_deg": "inferred",
+            "pass_sweep.summary.peak_key_rate": "inferred",
+            "pass_sweep.summary.total_secret_bits": "inferred",
+            "pass_sweep.summary.mean_key_rate_in_window": "inferred",
+        },
         "parameters": {
             "max_elevation_deg": args.max_elevation,
             "min_elevation_deg": args.min_elevation,
@@ -2078,6 +2234,8 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
             "loss_vs_elevation_plot": "loss_vs_elevation.png",
         },
     }
+
+    _attach_manifest_and_git(report)
 
     report_path = outdir / "reports" / "latest.json"
     with open(report_path, "w") as f:

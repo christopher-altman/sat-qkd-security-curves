@@ -58,6 +58,8 @@ Quick run examples:
 
 ```bash
 ./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 200000
+# Mission narrative summary
+./py -m sat_qkd_lab.run mission
 # Same sweep, but include finite-key penalties (copy/paste friendly ε defaults)
 ./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 500000 --finite-key --eps-pe 1e-10 --eps-sec 1e-10 --eps-cor 1e-15
 ./py -m sat_qkd_lab.run pass-sweep --max-elevation 70 --pass-duration 300
@@ -361,6 +363,7 @@ Both return structured results with QBER, secret fraction, and key rate metrics.
 - **Pass realism:** enable `pass-sweep --fading-ou` with `--fading-ou-mean`, `--fading-ou-sigma`, `--fading-ou-tau-s`. Summary includes `summary.fading.mean`, `summary.fading.var`, `summary.fading.corr_time_seconds`, and `summary.outages` with `count`, `mean_duration_s`, and `durations_s`. Plots are generated on run (Planned if not present in this checkout): `figures/fading_ou_time.png`, `figures/secure_window_fragmentation.png`.
 - **Polarization / basis bias:** enable `pass-sweep --pol-rotation --pol-rotation-max-deg --basis-bias-max`. Outputs include `pol.rotation_angle_deg`, `basis.bias_mean`, `basis.bias_std`, and time‑series `pol_rotation_deg`/`basis_bias`. Plot generated on run (Planned if not present in this checkout): `figures/pol_rotation_vs_elevation.png`.
 - **Calibration card:** `calibration-fit` writes `reports/latest_calibration_card.json` (Planned if not present in this checkout) with `model_card.fit.r2`, `model_card.fit.param_uncertainty`, `model_card.fim.cond`, `model_card.fim.identifiable`, and `model_card.identifiable`. Warnings are emitted when identifiability is low. Plots generated on run (Planned if not present in this checkout): `figures/calibration_quality_card.png`, `figures/calibration_residuals.png`.
+- **Assumptions manifest:** `./py -m sat_qkd_lab.run assumptions` prints a stable JSON manifest; `reports/latest.json` now embeds `assumptions_manifest` for auditability.
 - **Blinding + JSON contract:** append‑only JSON keys, required units (Hz, seconds, bits, bps, degrees where used), and no label leakage unless `--unblind`. Tests cover `reports/latest.json`, `reports/latest_pass.json`, `reports/latest_experiment.json`, `reports/forecast_blinded.json` (Planned if not present), and `reports/latest_sync_params.json` (Planned if not present).
 - **Finite-key boundary:** outputs include `finite_key.bound`, `finite_key.status`, and `finite_key.reason`; insecure regimes return NO-SECRET-KEY with zero finite-key rates.
 - **Dashboard:** install with `./py -m pip install -e ".[dashboard]"` and launch via `./py -m sat_qkd_lab.dashboard` (blinded by default).
