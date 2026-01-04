@@ -36,6 +36,9 @@ coverage.xml
 *~
 .DS_Store
 
+# docs is intentionally scratchpad (development artifacts, run logs, draft notes)
+docs/
+
 # Generated run outputs
 runs/
 
