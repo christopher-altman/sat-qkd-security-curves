@@ -591,6 +591,41 @@ When extending the codebase, understanding where changes are safe is critical:
 
 For detailed module boundaries, extension points, and validation mapping, see the full [Architecture & Dependency Contract](specs/contracts/ARCHITECTURE.md).
 
+## Physical Assumptions (Link Model Card)
+
+The satellite-to-ground link model uses the following physical assumptions. Each parameter is traceable to code and CLI flags.
+
+### Key Link Parameters
+
+| Parameter | Default | Units | Code Source | CLI Override |
+|-----------|---------|-------|-------------|--------------|
+| Wavelength (λ) | 850 nm | m | `free_space_link.py` | `--wavelength` |
+| TX aperture (D_tx) | 0.30 m | m | `free_space_link.py` | `--tx-diameter` |
+| RX aperture (D_rx) | 1.0 m | m | `free_space_link.py` | `--rx-diameter` |
+| Pointing jitter (σ_point) | 2 µrad | rad | `free_space_link.py` | `--sigma-point` |
+| Satellite altitude | 500 km | m | `free_space_link.py` | `--altitude` |
+| Zenith atm. loss | 0.5 dB | dB | `free_space_link.py` | `--atm-loss-db` |
+| Turbulence (σ_ln) | 0.0 | — | `free_space_link.py` | `--sigma-ln` |
+| System loss | 3.0 dB | dB | `free_space_link.py` | `--system-loss-db` |
+| Detection efficiency (η) | 0.2 | — | `detector.py` | `--eta` |
+| Background prob. (p_bg) | 1e-4 | /pulse | `detector.py` | `--p-bg` |
+| Day background factor | 100× | — | `free_space_link.py` | `--day-bg-factor` |
+
+### Model Characteristics
+
+- **Pointing jitter:** 2D Rayleigh distribution (Gaussian magnitude)
+- **Airmass formula:** Kasten-Young (accurate to ~0.5° elevation)
+- **Fading:** Lognormal (weak-to-moderate turbulence) or OU process
+- **Background:** Constant per-pulse probability, scaled for day/night
+
+### Override Safety (Link Model)
+
+- **Green zones (safe):** Wavelength, aperture sizes, altitude, system loss
+- **Yellow zones (careful):** Pointing jitter, η, p_bg, fading parameters
+- **Red zones (dangerous):** Setting p_bg=0, η=1, or negative loss values
+
+For complete traceability, validation mapping, and invariants, see the full [Link Model Card](specs/contracts/LINK_MODEL_CARD.md).
+
 ## Topics
 
 `quantum-key-distribution` · `qkd` · `quantum-cryptography` · `bb84` · `decoy-state` · `e91` · `ekert91` · `entanglement-based-qkd` · `cvqkd` · `continuous-variable-qkd` · `gg02` · `finite-key` · `privacy-amplification` · `information-reconciliation` · `noise-analysis` · `security-analysis` · `adversarial-attacks` · `simulation` · `satellite-communications` · `free-space-optics`
