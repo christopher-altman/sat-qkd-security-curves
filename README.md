@@ -562,7 +562,7 @@ key_rate_per_pulse = (n_sifted / n_sent) × secret_fraction
 - Demonstrates PNS attack resilience (motivation for real satellite QKD)
 
 References:
-- Lim et al., [Concise security bounds for practical decoy-state quantum key distribution.](https://doi.org/10.1103/PhysRevA.89.022307) (*Physical Review A* 2014)
+- Lim *et al.*, [Concise security bounds for practical decoy-state quantum key distribution.](https://doi.org/10.1103/PhysRevA.89.022307) (*Physical Review A* 2014)
 
 **CV-QKD (GG02) Scaffold** — The `cv-sweep` command provides a structural scaffold for Continuous-Variable QKD using Gaussian-modulated coherent states:
 - Computes SNR and mutual information I(A:B) vs channel loss
@@ -620,8 +620,8 @@ key_rate_per_pulse_finite = ell_bits / n_sent
 ```
 
 References:
-- Tomamichel et al., “Tight finite-key analysis for quantum cryptography” (*Nature Communications* 2012)
-- Lim et al., “Concise security bounds for practical decoy-state QKD” (*Physical Review A* 2014)
+- Tomamichel *et al.*, “Tight finite-key analysis for quantum cryptography” (*Nature Communications* 2012)
+- Lim *et al.*, “Concise security bounds for practical decoy-state QKD” (*Physical Review A* 2014)
 
 **Free-Space Optical Link Model** — The `pass-sweep` command provides a physically-grounded free-space link budget for satellite-to-ground QKD:
 
@@ -643,8 +643,8 @@ References:
 ```
 
 References:
-- Liao et al., [Satellite-to-ground quantum key distribution.](https://doi.org/10.1038/nature23655) (Nature 2017)
-- Bourgoin et al., [A comprehensive design and performance analysis of low Earth orbit satellite quantum communication.](https://doi.org/10.1088/1367-2630/15/2/023006) (NJP 2013)
+- Liao *et al.*, [Satellite-to-ground quantum key distribution.](https://doi.org/10.1038/nature23655) (Nature 2017)
+- Bourgoin *et al.*, [A comprehensive design and performance analysis of low Earth orbit satellite quantum communication.](https://doi.org/10.1088/1367-2630/15/2/023006) (NJP 2013)
 
 ### Simulator API
 
@@ -929,9 +929,9 @@ For complete traceability, validation mapping, and invariants, see the full [Lin
 
 8. Lim, C. C. W., Curty, M., Walenta, N., Xu, F., & Zbinden, H. (2014). [Concise security bounds for practical decoy-state quantum key distribution.](https://doi.org/10.1103/PhysRevA.89.022307) *Physical Review A*, *89*, 022307.
 
-9. Liao, S.-K., et al. (2017). [Satellite-to-ground quantum key distribution.](https://doi.org/10.1038/nature23655) *Nature*, *549*, 43–47.
+9. Liao, S.-K., *et al.* (2017). [Satellite-to-ground quantum key distribution.](https://doi.org/10.1038/nature23655) *Nature*, *549*, 43–47.
 
-10. Bourgoin, J.-P., et al. (2013). [A comprehensive design and performance analysis of low Earth orbit satellite quantum communication.](https://doi.org/10.1088/1367-2630/15/2/023006) *New Journal of Physics*, *15*, 023006.
+10. Bourgoin, J.-P., *et al.* (2013). [A comprehensive design and performance analysis of low Earth orbit satellite quantum communication.](https://doi.org/10.1088/1367-2630/15/2/023006) *New Journal of Physics*, *15*, 023006.
 
 ## Citations
 
