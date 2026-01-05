@@ -5,358 +5,99 @@
 
 ## Scope
 
-This document defines the physical assumptions underlying the satellite-to-ground optical link model used in security curve generation. It provides traceability from each assumption to its code location and clarifies what constitutes "within validity envelope" for each parameter.
-
-**What is modeled:**
-- Satellite-to-ground free-space optical link geometry (LEO)
-- Diffraction-limited beam propagation with Gaussian approximation
-- Pointing jitter with 2D Rayleigh distribution (magnitude)
-- Atmospheric extinction using Kasten-Young airmass formula
-- Lognormal turbulence fading (weak-to-moderate regime)
-- Day/night background noise scaling
-- Detector efficiency and dark count effects
-
-**What is NOT modeled (out of scope):**
-- Adaptive optics correction
-- Fried parameter (r0) or isoplanatic angle dynamics
-- Real-time atmospheric sensing or weather fusion
-- Beam wander or tip-tilt beyond pointing jitter
-- Multi-aperture or coherent combining receivers
-- Validated radiative transfer (MODTRAN-level accuracy)
-
-**Validity envelope:**
-Assumptions are valid for:
-- LEO orbits (400–600 km altitude)
-- Elevation angles 10°–90°
-- Near-infrared wavelengths (800–900 nm)
-- Clear-to-moderate atmospheric conditions
-- Ground station apertures 0.5–1.5 m
-- Pointing jitter 1–10 µrad RMS
-
----
-
-## 1. Executive Summary
-
-The link model stack transforms satellite geometry into channel loss through the following pipeline:
-
-```
-Elevation angle (deg)
-    ↓
-Slant range geometry (spherical Earth)
-    ↓
-Geometric coupling (Gaussian beam + aperture)
-    ↓
-Pointing loss (Rayleigh 2-axis jitter → average coupling)
-    ↓
-Atmospheric extinction (Kasten-Young airmass × zenith loss)
-    ↓
-System losses (optics, detector coupling)
-    ↓
-Total loss_db
-    ↓
-Detection probability → QBER → Secret fraction
-```
-
-**Fading/turbulence** enters as a multiplicative transmittance factor (lognormal or OU process) applied after deterministic loss calculation.
-
-**Background noise** enters as additive click probability per pulse window, scaled by day/night mode.
-
-### Why This Matters for Security Curves
-
-The link model determines where the "security cliff" occurs:
-- At low loss: signal dominates, QBER is low, security margin is high
-- At high loss: background clicks dominate, QBER rises toward 0.5, security vanishes
-
-If link assumptions are incorrect (e.g., unrealistically low background, unrealistically good pointing), the curves will show security where none exists. If assumptions are overly pessimistic, viable operating regimes may appear infeasible.
-
----
-
-## 2. Assumption Traceability Table
-
-| Parameter | Symbol | Default | Units | Distribution/Model | Dim | Code Source | Override | Affects | Sensitivity | Safety |
-|-----------|--------|---------|-------|-------------------|-----|-------------|----------|---------|-------------|--------|
-| Wavelength | λ | 850e-9 | m | Constant | — | `free_space_link.py:FreeSpaceLinkParams.wavelength_m` | `--wavelength` | loss (diffraction) | Low | Green |
-| TX aperture diameter | D_tx | 0.30 | m | Constant | — | `free_space_link.py:FreeSpaceLinkParams.tx_diameter_m` | `--tx-diameter` | loss (divergence) | Med | Green |
-| RX aperture diameter | D_rx | 1.0 | m | Constant | — | `free_space_link.py:FreeSpaceLinkParams.rx_diameter_m` | `--rx-diameter` | loss (coupling) | Med | Green |
-| Beam divergence | θ_div | Computed | rad | 1.22λ/D_tx (diffraction) | — | `free_space_link.py:effective_divergence_rad` | `beam_divergence_rad` param | loss | Med | Green |
-| Pointing jitter RMS | σ_point | 2e-6 | rad | Rayleigh (2D Gaussian magnitude) | 2-axis | `free_space_link.py:FreeSpaceLinkParams.sigma_point_rad` | `--sigma-point` | loss | High | Yellow |
-| Satellite altitude | h | 500e3 | m | Constant | — | `free_space_link.py:FreeSpaceLinkParams.altitude_m` | `--altitude` | slant range | Low | Green |
-| Earth radius | R_E | 6371e3 | m | Constant | — | `free_space_link.py:FreeSpaceLinkParams.earth_radius_m` | param only | geometry | Low | Green |
-| Zenith atm. loss | L_atm_z | 0.5 | dB | Constant | — | `free_space_link.py:FreeSpaceLinkParams.atm_loss_db_zenith` | `--atm-loss-db` | loss | Med | Green |
-| Turbulence fading | σ_ln | 0.0 | — | Lognormal(−σ²/2, σ) | — | `free_space_link.py:FreeSpaceLinkParams.sigma_ln` | `--sigma-ln` | loss variance | High | Yellow |
-| System loss | L_sys | 3.0 | dB | Constant | — | `free_space_link.py:FreeSpaceLinkParams.system_loss_db` | `--system-loss-db` | loss | Low | Green |
-| Day/night mode | is_night | True | bool | Discrete | — | `free_space_link.py:FreeSpaceLinkParams.is_night` | `--day` flag | background | Med | Green |
-| Day background factor | f_day | 100.0 | — | Multiplicative | — | `free_space_link.py:FreeSpaceLinkParams.day_background_factor` | `--day-bg-factor` | QBER | High | Yellow |
-| Detection efficiency | η | 0.2 | — | Constant | — | `detector.py:DetectorParams.eta` | `--eta` | yields, QBER | High | Yellow |
-| Background prob. | p_bg | 1e-4 | /pulse | Constant | — | `detector.py:DetectorParams.p_bg` | `--p-bg` | QBER | High | Yellow |
-| Afterpulse prob. | p_ap | 0.0 | — | Constant | — | `detector.py:DetectorParams.p_afterpulse` | `--afterpulse-prob` | yields | Med | Yellow |
-| Dead time | τ_dead | 0 | pulses | Constant | — | `detector.py:DetectorParams.dead_time_pulses` | `--dead-time-pulses` | yields | Med | Yellow |
-| OU fading mean | µ_OU | 1.0 | — | OU process | — | `ou_fading.py:simulate_ou_transmittance` | `--fading-ou-mean` | loss variance | Med | Green |
-| OU fading sigma | σ_OU | 0.1 | — | OU process | — | `ou_fading.py:simulate_ou_transmittance` | `--fading-ou-sigma` | loss variance | Med | Yellow |
-| OU reversion rate | θ_OU | (1/30) | 1/s | OU process | — | CLI: `--fading-ou-tau-s` → θ = 1/τ | `--fading-ou-tau-s` | correlation | Med | Green |
-| Pointing jitter (alt) | σ_jit | 2.0 | µrad | OU-driven 1D | 1-axis | `pointing.py:PointingParams.pointing_jitter_urad` | `--pointing-jitter-urad` | loss | High | Yellow |
-| Acquisition time | t_acq | 0.0 | s | Step function | — | `pointing.py:PointingParams.acq_seconds` | `--pointing-acq-s` | window | Low | Green |
-| Dropout probability | p_drop | 0.0 | /s | Poisson rate proxy | — | `pointing.py:PointingParams.dropout_prob` | `--pointing-dropout-prob` | window | Med | Yellow |
-| Timing jitter | σ_t | 0.0 | s | Gaussian | — | `timing.py:TimingModel.jitter_sigma_s` | `--jitter-ps` (ps) | coincidence | Med | Yellow |
-| TDC quantization | Δ_TDC | 0.0 | s | Uniform | — | `timing.py:TimingModel.tdc_seconds` | param only | coincidence | Low | Green |
-
----
-
-## 3. Atmospheric/Extinction/Airmass Assumptions
-
-### Airmass Formula
-
-The repo implements the **Kasten-Young airmass formula** in `free_space_link.py:atmospheric_extinction_db()`:
-
-```python
-airmass = 1.0 / (sin(el_rad) + 0.50572 * (el + 6.07995) ** (-1.6364))
-```
-
-This is a well-known empirical formula accurate to ~0.5° elevation.
-
-### Elevation-to-Airmass Mapping
-
-| Elevation (deg) | Airmass (approx) |
-|-----------------|------------------|
-| 90 (zenith) | 1.0 |
-| 60 | 1.15 |
-| 45 | 1.41 |
-| 30 | 2.0 |
-| 20 | 2.9 |
-| 10 | 5.6 |
-
-### Total Atmospheric Loss
-
-Atmospheric loss is computed as:
-
-```
-L_atm(el) = L_atm_zenith × airmass(el)
-```
-
-Default `L_atm_zenith = 0.5 dB` corresponds to good clear-sky conditions at 850 nm.
-
-### Alternative Atmosphere Models (atmosphere.py)
-
-The `atmosphere.py` module provides additional scenario generators:
-
-| Model | Description | Use case |
-|-------|-------------|----------|
-| `"none"` | Zero attenuation | Baseline/vacuum |
-| `"simple_clear_sky"` | 0.2 dB/km constant | Simple scenarios |
-| `"kruse"` | Visibility-based empirical | Aerosol/haze scenarios |
-
-These are **scenario generators**, not validated radiative transfer models.
-
----
-
-## 4. Pointing Jitter + Fading Assumptions
-
-### Pointing Jitter Distribution
-
-**Primary model** (`free_space_link.py`):
-- Distribution: **2D Gaussian** (Rayleigh magnitude)
-- Parameterization: RMS σ_point in radians
-- Dimensionality: **2-axis** (azimuth + elevation combined into radial)
-- Entry point: `pointing_loss_db()` computes average loss factor
-
-The average pointing loss for Gaussian beam with Rayleigh jitter:
-```
-<η_point> = 1 / (1 + (σ_point/θ_div)²)
-L_point_dB = −10 log₁₀(<η_point>)
-```
-
-**Secondary model** (`pointing.py`):
-- Distribution: **1D OU process** for time-varying jitter
-- Generates lock state and transmittance multiplier per time step
-- Includes acquisition delay, dropout, and relock dynamics
-
-### Fading Models
-
-**Lognormal fading** (`free_space_link.py`, `fading_samples.py`):
-- Distribution: Lognormal with unit mean
-- Parameters: σ_ln (log-amplitude standard deviation)
-- Formula: T = exp(2χ) where χ ~ N(−σ²/2, σ²)
-- Regime: Weak-to-moderate turbulence
-
-**OU fading** (`ou_fading.py`):
-- Distribution: Ornstein-Uhlenbeck process
-- Parameters: µ (mean), θ (reversion rate = 1/τ), σ (volatility)
-- Produces correlated transmittance time series
-- Clamped to [0, 1]
-
-### Integration Points
-
-Fading enters in `pass_model.py`:
-- Lognormal samples multiply the deterministic transmittance
-- OU process provides time-correlated transmittance evolution
-
----
-
-## 5. Detector + Background + Timing Assumptions
-
-### Background Rate Model
-
-Background clicks are modeled as a constant probability per pulse window:
-
-| Parameter | Default | Source |
-|-----------|---------|--------|
-| Base p_bg | 1e-4 | `detector.py:DetectorParams.p_bg` |
-| Day factor | 100× | `free_space_link.py:day_background_factor` |
-
-Effective background: `p_bg_eff = p_bg × (1 if night else day_factor)`
-
-This is a **lumped model** combining:
-- Detector dark counts
-- Stray light
-- Sky radiance (crude day/night proxy)
-
-### Dark Count Defaults
-
-Dark counts are included in `p_bg`. The `optics.py` module provides additional temperature scaling:
-```
-DCR(T) = DCR_base × (1 + 0.02 × (T − 20°C))
-```
-
-### Detector Efficiency
-
-| Parameter | Default | Range |
-|-----------|---------|-------|
-| η | 0.2 | [0, 1] |
-| η_z (Z-basis) | η | [0, 1] |
-| η_x (X-basis) | η | [0, 1] |
-
-This is a lumped efficiency covering:
-- Detector quantum efficiency
-- Optical coupling
-- Filtering losses
-
-### Timing Jitter
-
-The `timing.py` module models clock and timing effects:
-
-| Parameter | Default | Effect |
-|-----------|---------|--------|
-| jitter_sigma_s | 0.0 | Gaussian timing jitter |
-| tdc_seconds | 0.0 | TDC quantization step |
-| drift_ppm | 0.0 | Clock drift |
-
-Timing jitter affects coincidence window matching, which impacts:
-- CAR (coincidence-to-accidental ratio)
-- Apparent QBER (timing mismatch → wrong bit assignments)
-
----
-
-## 6. Override Safety Notes (Link Model Card)
-
-### Red Zone (changes can invalidate security claims)
-
-| Change | Risk |
-|--------|------|
-| Setting p_bg = 0 | Unrealistic: QBER floor vanishes, curves show security where none exists |
-| Setting η = 1.0 without justification | Unrealistic: hides detection losses |
-| Negative loss_db values | Unphysical: gain in passive channel |
-| sigma_point = 0 with real tracking | Hides pointing loss, optimistic curves |
-| Modifying sifting factor in protocol | Wrong key rate calculation (security issue) |
-
-### Yellow Zone (requires paired validation)
-
-| Change | Required Validation |
-|--------|---------------------|
-| σ_point outside [1, 10] µrad | Compare against real tracking data |
-| σ_ln > 0.5 | Verify weak turbulence assumption still holds |
-| p_bg outside [1e-6, 1e-2] | Check against detector spec sheets |
-| η outside [0.1, 0.9] | Justify with detector datasheet |
-| Day background factor ≠ 100 | Calibrate against measured day/night ratio |
-| Afterpulsing enabled | Run `test_decoy_realism.py` to verify yields |
-
-### Green Zone (safe parameter changes)
-
-| Change | Safety |
-|--------|--------|
-| Wavelength 800–1600 nm | Valid for near-IR optics |
-| TX/RX aperture 0.1–2.0 m | Geometry scales correctly |
-| Altitude 400–800 km | LEO range |
-| Zenith atm. loss 0.2–2.0 dB | Reasonable clear-to-hazy |
-| System loss 1–10 dB | Covers typical optical chains |
-
-### Security-Relevant Invariants
-
-These invariants MUST hold:
-
-1. **p_bg ≥ 0**: Background cannot be negative
-2. **0 ≤ η ≤ 1**: Detection efficiency is a probability
-3. **loss_db ≥ 0**: Passive channel cannot amplify
-4. **QBER ∈ [0, 0.5]**: By definition
-5. **Sifting factor = 0.5 for BB84**: Hardcoded, do not override
-6. **Finite-key epsilon values ∈ (0, 1)**: Probabilities
-
----
-
-## 7. Validation Hooks + Recommended Checks
-
-### Tests Protecting Link Model
-
-| Test File | Component Protected |
-|-----------|---------------------|
-| `test_optical_link_integration.py` | Free-space link budget |
-| `test_fading_model.py` | Lognormal fading |
-| `test_ou_fading.py` | OU fading process |
-| `test_fading_samples.py` | Fading sample statistics |
-| `test_pointing_dynamics.py` | Pointing lock/unlock |
-| `test_atmosphere_models.py` | Kruse/clear-sky models |
-
-### Tests Protecting Detector Model
-
-| Test File | Component Protected |
-|-----------|---------------------|
-| `test_detector_effects.py` | Afterpulsing, dead time |
-| `test_detector_attacks.py` | Attack-detector interaction |
-| `test_decoy_realism.py` | Decoy + detector combined |
-
-### Tests Protecting Timing
-
-| Test File | Component Protected |
-|-----------|---------------------|
-| `test_clock_sync.py` | Offset/drift estimation |
-| `test_timing_sync_layer.py` | Timing model application |
-| `test_timetag_coincidence.py` | Coincidence matching |
-
-### Coverage Gaps (noted)
-
-- No direct unit test for Kasten-Young airmass formula accuracy
-- No cross-validation against measured satellite link data
-- No turbulence profile (Cn2) tests
-
-### Sensitivity Sweep Checklist
-
-Run these sweeps to sanity-check curve behavior:
-
-1. **p_bg sweep**: 1e-6 → 1e-2 (should see QBER rise at high loss)
-2. **η sweep**: 0.1 → 0.5 (should see curves shift right/left)
-3. **σ_point sweep**: 1 → 10 µrad (should see loss increase)
-4. **σ_ln sweep**: 0 → 0.5 (should see variance increase, mean shift)
-5. **zenith atm. loss sweep**: 0.2 → 2.0 dB (should see low-elevation loss increase)
-
----
-
-## 8. References
-
-Anchor papers for interpreting link model assumptions:
-
-1. Liao, S.-K., et al. (2017). Satellite-to-ground quantum key distribution. *Nature* 549, 43–47.
-
-2. Bourgoin, J.-P., et al. (2013). A comprehensive design and performance analysis of low Earth orbit satellite quantum communication. *New Journal of Physics* 15, 023006.
-
-3. Andrews, L. C., & Phillips, R. L. (2005). *Laser Beam Propagation through Random Media* (2nd ed.). SPIE Press.
-
-4. Bedington, R., Arrazola, J. M., & Ling, A. (2017). Progress in satellite quantum key distribution. *npj Quantum Information* 3, 30.
-
-5. Kasten, F., & Young, A. T. (1989). Revised optical air mass tables and approximation formula. *Applied Optics* 28, 4735–4738.
-
----
-
-## 9. Changelog
-
-| Version | Date | Changes |
-|---------|------|---------|
-| 1.0 | 2026-01-05 | Initial link model card |
+This contract codifies the physical assumptions that feed the satellite-to-ground security curves produced by the `sweep` and `pass-sweep` workflows. The canonical link stack is implemented in `src/sat_qkd_lab/free_space_link.py`, wrapped by `src/sat_qkd_lab/pass_model.py`/`sweep.py`, and exposed through `src/sat_qkd_lab/run.py` CLI commands. It includes
+
+- Free-space geometry (LEO/ground) with diffraction-limited optics
+- Pointing jitter and optional acquisition/dropout dynamics
+- Atmospheric extinction (Kasten-Young airmass) and optional aerosol scenarios
+- Turbulence/fading (lognormal and OU) and time-correlated backgrounds
+- Detector efficiency, dark/background clicks, and coincidence gating
+
+**Not modeled:** adaptive optics, real-time weather fusion, multi-aperture receivers, detailed radiative transfer (MODTRAN), full polarization subtleties beyond basis-bias/rotation toggles, and satellite orbit propagation beyond fixed altitude.
+
+## Defaults & Assumptions
+
+The table below lists the physics knobs that feed η, QBER, sift-rate, and finite-key penalty. Each default is backed by a dataclass field, module constant, or CLI default.
+
+| Parameter | Default | Units | Where defined | CLI/constructor override |
+|-----------|---------|-------|----------------|-------------------------|
+| Wavelength (λ) | 850e-9 | m | `src/sat_qkd_lab/free_space_link.py:FreeSpaceLinkParams.wavelength_m` | `--wavelength` |
+| Transmitter aperture (D_tx) | 0.30 | m | `FreeSpaceLinkParams.tx_diameter_m` | `--tx-diameter` |
+| Receiver aperture (D_rx) | 1.0 | m | `FreeSpaceLinkParams.rx_diameter_m` | `--rx-diameter` |
+| Beam divergence half-angle | `1.22 × λ / D_tx` (diffraction limit) | rad | `FreeSpaceLinkParams.effective_divergence_rad` | Set `beam_divergence_rad` when instantiating `FreeSpaceLinkParams` |
+| Pointing jitter (σ_point, 2D Rayleigh magnitude) | 2e-6 | rad | `FreeSpaceLinkParams.sigma_point_rad` | `--sigma-point` |
+| Satellite altitude (h) | 500e3 | m | `FreeSpaceLinkParams.altitude_m` | `--altitude` |
+| Earth radius (R_E) | 6371e3 | m | `FreeSpaceLinkParams.earth_radius_m` | fixed in code (no CLI) |
+| Zenith atmospheric loss (L_atm_zenith) | 0.5 | dB | `FreeSpaceLinkParams.atm_loss_db_zenith` | `--atm-loss-db` |
+| System loss (optics, coupler, detector) | 3.0 | dB | `FreeSpaceLinkParams.system_loss_db` | `--system-loss-db` |
+| Day/night mode | Night (True) | flag | `FreeSpaceLinkParams.is_night` via `run.py` pass-sweep logic | `--day` / `--is-night` |
+| Day background factor | 100 | × | `FreeSpaceLinkParams.day_background_factor` | `--day-bg-factor` |
+| Base background probability (p_bg) | 1e-4 | per pulse window | `src/sat_qkd_lab/detector.py:DetectorParams.p_bg` | `--p-bg` |
+| Detection efficiency (η) | 0.2 | — | `DetectorParams.eta` | `--eta` |
+| Afterpulse probability | 0.0 | — | `DetectorParams.p_afterpulse` | `--afterpulse-prob` |
+| Afterpulse window | 0 | pulses | `DetectorParams.afterpulse_window` | `--afterpulse-window` |
+| Afterpulse decay | 0.0 | — | `DetectorParams.afterpulse_decay` | `--afterpulse-decay` |
+| Dead time | 0 | pulses | `DetectorParams.dead_time_pulses` | `--dead-time-pulses` |
+| Optical filter bandwidth | 1.0 | nm | `src/sat_qkd_lab/optics.py:OpticalParams.filter_bandwidth_nm` | `--filter-bandwidth-nm` |
+| Detector temperature | 20.0 | °C | `OpticalParams.detector_temp_c` | `--detector-temp-c` |
+| Lognormal scintillation std (σ_ln) | 0.0 (0.3 when `--turbulence` is active) | — | `FreeSpaceLinkParams.sigma_ln` / `run.py` pass-sweep | `--sigma-ln` (guards `--turbulence`) |
+| Fading samples (per-step lognormal) | σ_ln=0.3, samples=50, trials=1, seed=0 | — | `src/sat_qkd_lab/pass_model.py:FadingParams` | `--fading`, `--fading-sigma-ln`, `--fading-samples`, `--fading-trials`, `--fading-seed` |
+| OU fading (time-correlated transmittance) | μ=1.0, σ=0.1, τ=30 s, outage threshold 0.2 | — | `src/sat_qkd_lab/run.py` + `src/sat_qkd_lab/ou_fading.py:simulate_ou_transmittance` | `--fading-ou`, `--fading-ou-mean`, `--fading-ou-sigma`, `--fading-ou-tau-s`, `--fading-ou-outage-threshold` |
+| Pointing acquisition / dropout | acq=0 s, dropout=0 s⁻¹, relock=0 s, jitter=2 µrad | s / µrad | `src/sat_qkd_lab/pointing.py:PointingParams` | `--pointing`, `--acq-seconds`, `--dropout-prob`, `--relock-seconds`, `--pointing-jitter-urad` |
+| Time-correlated background process | mean=1.0, σ=0.2, τ=60 s | — | `src/sat_qkd_lab/background_process.py` | `--background-process`, `--bg-ou-mean`, `--bg-ou-sigma`, `--bg-ou-tau-s` |
+| Atmosphere scenario + visibility | `none` (options `simple_clear_sky`, `kruse` with `visibility km`) | — | `src/sat_qkd_lab/atmosphere.py` | `--atmosphere-model`, `--visibility-km`, `--wavelength-nm` |
+| Coincidence window (τ) | 200 | ps | `src/sat_qkd_lab/run.py` commands `clock-sync`, `sync-estimate`, `coincidence-sim` | `--tau-ps` |
+| Timing jitter (σ_t) | 0 (but 20 ps for `clock-sync`/`sync-estimate`, 80 ps for `coincidence-sim`) | s | `src/sat_qkd_lab/timing.py:TimingModel.jitter_sigma_s` + `run.py` `--jitter-ps` | `--jitter-ps` |
+| TDC quantization | 0 | s | `TimingModel.tdc_seconds` | `--tdc-ps` |
+| HIL ingestion coincidence window | 200 | ps | `run.py` `--ingest-tau-ps` | `--ingest-tau-ps` |
+
+### Derived noise scaling
+
+- **Effective background per pulse:** `p_bg_eff = background_rate_hz × (mode factor) × p_bg`, where `background_rate_hz` multiplies `p_bg` by filter bandwidth and day/night mode as implemented in `src/sat_qkd_lab/optics.py`. The night factor is 1× and the day factor is 100×, consistent with the `--day` flag.
+- **Dark-count temperature scaling:** `dark_count_rate_hz` multiplies the base rate by `1 + 0.02 × (T − 20 °C)` (clamped ≥ 0). The resulting rate is used to set `DetectorParams.p_bg` before simulation.
+- **Effective background for pass sweeps:** `effective_background_prob` in `run.py`/`free_space_link.py` multiplies `p_bg` by the day/night factor at each time step; optional `--background-process` adds OU fluctuations.
+
+### Atmospheric extinction & geometry
+
+- **Airmass:** `free_space_link.atmospheric_extinction_db()` uses the Kasten–Young formula (`airmass = 1/(sin(el) + 0.50572*(el+6.07995)^(-1.6364))`) for elevation angles down to ~1°. Total atmospheric loss is `L_atm_zenith × airmass`.
+- **Geometric coupling:** Gaussian beam radius grows as `range × θ` and receiver coupling uses the 1 − exp(−2(a/w)^2) truncation. The divergence θ is either the diffraction limit or `beam_divergence_rad` override.
+- **Atmosphere scenario scripts:** `--atmosphere-model` adds additive loss from `simple_clear_sky` (0.2 dB/km) or `kruse` visibility-based formulas; the default `none` means no extra attenuation beyond Kasten–Young.
+
+### Pointing, fading, and security windows
+
+- **Pointing loss:** `free_space_link.pointing_loss_db()` averages Rayleigh-distributed jitter, giving `η_pointing = 1/(1 + (σ_point/θ)^2)`. A zero jitter override yields 0 dB pointing loss but is guarded by the override safety rules below.
+- **Pointing dynamics (optional `--pointing`):** `simulate_pointing_profile` produces lock-state, transmittance multipliers, and dropout statistics for acquisition time, dropout probability, and relock delay.
+- **Lognormal turbulence:** `sweep` and `pass_model` multiply deterministic transmittance by lognormal samples (unit mean) when `--turbulence` or `--fading` are enabled. The standard deviation is controlled by `σ_ln`.
+- **Ornstein–Uhlenbeck fading:** `--fading-ou` generates time-correlated transmittance traces (`simulate_ou_transmittance`) that are clipped to [0, 1] and yield outage clusters via `compute_outage_clusters`.
+- **Background process:** `--background-process` applies OU scaling to `p_bg_eff`, letting mean, sigma, and correlation time tune the temporal noise.
+
+### Timing & coincidences
+
+- **Timing model:** `TimingModel` defaults to zero offset, zero drift, zero jitter, and zero TDC quantization. CLI commands (e.g., `clock-sync`, `sync-estimate`, `coincidence-sim`) inject picosecond-level jitter (`--jitter-ps`) and window (`--tau-ps`).
+- **Coincidence matching:** `coincidence.py` enforces `|Δt| ≤ τ` around the gate. The ingestion/HIL playback window uses `--ingest-tau-ps`, and `--tdc-ps` applies quantization via `TimingModel.tdc_seconds`.
+
+## What Changes What
+
+| Parameter(s) | Primary outputs affected |
+|---------------|---------------------------|
+| λ, D_tx, D_rx, beam divergence, altitude, geometric + pointing loss | Channel transmittance η (loss_db) → direct shift of QBER and secret fraction |
+| σ_point, pointing OU dynamics (`--pointing` args) | Coupling loss, dropouts, secure window duration → η, QBER, sift rate |
+| L_atm_zenith, airmass (elevation) | Atmospheric loss → η, QBER, key rate per pulse |
+| System loss | Lumped attenuation → η, secret fraction |
+| σ_ln (`--turbulence`/`--fading`), fading OU parameters | Loss variance → QBER spread, finite-key penalty, outage statistics |
+| p_bg, day/night factor, filter bandwidth, detector temperature, background OU | Background click rate → QBER floor, incidental sift bits, secret fraction |
+| η, afterpulse probability/window/decay, dead time | Signal yield + accidental clicks → sift rate, finite-key penalty, detectable QBER offsets |
+| Coincidence window τ, timing jitter, TDC quantization | Accidental coincidences vs signal peaks → QBER, CAR, finite-key surplus |
+
+## Override Safety
+
+| Zone | Guidance |
+|------|----------|
+| **Green (safe)** | Wavelength in 800–1600 nm, D_tx/D_rx in 0.1–2.0 m, altitude 400–800 km, zenith loss 0.2–2.0 dB, system loss 1–10 dB, day/night ratio tuning via `--day-bg-factor`. These change loss gradually without violating passive-channel constraints. |
+| **Yellow (requires validation)** | Pointing jitter outside [1, 10] µrad (`--sigma-point`), `σ_ln > 0.5`, `--fading-sigma-ln`, `--fading-ou-mean/sigma/tau`, `p_bg` outside [1e-6, 1e-2], η outside [0.1, 0.9], enabling afterpulses/dead time without recalibrating finite-key bounds, changing `--filter-bandwidth-nm` or `--detector-temp-c` far from lab values, or toggling `--background-process` without verifying time scales. |
+| **Red (dangerous)** | Setting `p_bg` to 0, `η` to 1, `σ_point` to 0 without real tracking data, negative loss values (e.g., negative `system_loss`), ignoring finite-key abort thresholds (e.g., forcing QBER ≳ 11%), or breaking the pass geometry (e.g., sending fewer pulses than time steps). These invalidate security claims. |
+
+## Anchors
+
+- Liao, S.-K., et al. (2017). Satellite-to-ground quantum key distribution. *Nature* 549, 43–47. The assumptions target the same near-infrared, low-background regime that the Micius satellite explored.
+- Bourgoin, J.-P., et al. (2013). A comprehensive design and performance analysis of low Earth orbit satellite quantum communication. *New Journal of Physics* 15, 023006. The link envelope and turbulence reasoning follow the broad design space laid out in that work.
