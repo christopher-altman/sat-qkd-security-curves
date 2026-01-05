@@ -5,7 +5,7 @@
 *Quantum keys can fail quietly—loss and noise can leave you with bits, but no secrecy. We model the cliff to expose silent breakage before it becomes a system risk.*
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![CI](https://github.com/christopher-altman/sat-qkd-security-curves/actions/workflows/ci.yml/badge.svg)](https://github.com/christopher-altman/sat-qkd-security-curves/actions/workflows/ci.yml)
+[![CI](https://github.com/christopher-altman/sat-qkd-security-curves/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/christopher-altman/sat-qkd-security-curves/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Google Scholar](https://img.shields.io/badge/Google_Scholar-Profile-blue?logo=google-scholar)](https://scholar.google.com/citations?user=tvwpCcgAAAAJ)
 [![Hugging Face](https://img.shields.io/badge/huggingface-Cohærence-white)](https://huggingface.co/Cohaerence)
