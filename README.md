@@ -5,6 +5,7 @@
 *Quantum keys can fail quietly—loss and noise can leave you with bits, but no secrecy. We model the cliff to expose silent breakage before it becomes a system risk.*
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![CI](https://github.com/christopher-altman/sat-qkd-security-curves/actions/workflows/ci.yml/badge.svg)](https://github.com/christopher-altman/sat-qkd-security-curves/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Google Scholar](https://img.shields.io/badge/Google_Scholar-Profile-blue?logo=google-scholar)](https://scholar.google.com/citations?user=tvwpCcgAAAAJ)
 [![Hugging Face](https://img.shields.io/badge/huggingface-Cohærence-white)](https://huggingface.co/Cohaerence)
@@ -120,6 +121,9 @@ Quick run examples:
 .
 ├── pyproject.toml
 ├── README.md
+├── .github
+│   └── workflows
+│       └── ci.yml
 ├── src
 │   ├── main.py
 │   └── sat_qkd_lab
@@ -190,6 +194,7 @@ Quick run examples:
     ├── test_event_stream_pipeline.py
     ├── test_fading_model.py
     ├── test_fading_samples.py
+    ├── test_golden_curves.py
     ├── test_fdr_correction.py
     ├── test_fim_identifiability.py
     ├── test_finite_key_composable.py
@@ -458,6 +463,10 @@ The model generates:
 
 **Figure 1. Estimated secret-key rate versus channel loss for BB84.** ([↑ featured figure](#featured-figure))
 X-axis: channel loss (dB). Y-axis: key rate per pulse (bits/pulse). Simulated under the assumptions manifest. A scenario-generator sweep shows that link loss alone reduces detections but does not destroy secrecy until error rates dominate. Under an intercept–resend attack, the key rate per pulse collapses to zero at moderate loss even while sifted bits remain non-zero, revealing the security cliff where privacy amplification can no longer extract secrecy.
+
+## Verification / Golden checks
+
+- `tests/test_golden_curves.py` contains fast deterministic assertions that the asymptotic secret fraction drops to zero near the BB84 abort threshold and that the satellite pass envelope key rate decreases (while QBER stays in [0, 0.5]) as equivalent link loss rises, ensuring the core physics invariants stay intact.
 
 **Figure 2. Quantum Bit Error Rate (QBER) versus channel loss for BB84.** ([↑ featured figure](#featured-figure))
 X-axis: channel loss (dB). Y-axis: QBER (unitless). Simulated under the assumptions manifest. Without attack, QBER remains low until background/dark clicks dominate at high loss. An intercept–resend adversary injects a strong QBER signature, driving errors beyond the tolerable entropy budget. The plotted spikes illustrate the detectable breakage regime that classical throughput monitors would miss without explicit QBER estimation.
