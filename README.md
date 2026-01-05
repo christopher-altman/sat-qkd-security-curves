@@ -51,7 +51,7 @@ This framework supports **pass-time quality telemetry and post-pass security dis
   - [Hardware & Detectors](#hardware--detectors)
   - [Operations](#operations)
 - [CLI Examples](#cli-examples)
-- [Glossary (operational definitions)](#glossary)
+  - [Glossary (operational definitions)](#glossary)
 - [Layout](#layout)
 - [Problem](#problem)
 - [Core Claim](#core-claim)
