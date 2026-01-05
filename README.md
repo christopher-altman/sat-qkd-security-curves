@@ -568,7 +568,7 @@ References:
 - Computes SNR and mutual information I(A:B) vs channel loss
 - Holevo bound computation is **stubbed** (returns None)
 - Secret key rate is **not yet validated** (requires full Holevo bound)
-- Status: "toy" / "scaffold" - NOT for production security claims
+- Status: scaffold — NOT for production security claims
 
 This is a minimal demonstration of CV-QKD interfaces and assumptions manifest integration. See `docs/12_cvqkd_scaffold.md` for validation gates required before production use.
 
@@ -620,8 +620,8 @@ key_rate_per_pulse_finite = ell_bits / n_sent
 ```
 
 References:
-- Tomamichel et al., "Tight finite-key analysis for quantum cryptography" (Nature Comm. 2012)
-- Lim et al., "Concise security bounds for practical decoy-state QKD" (PRA 2014)
+- Tomamichel et al., “Tight finite-key analysis for quantum cryptography” (*Nature Communications* 2012)
+- Lim et al., “Concise security bounds for practical decoy-state QKD” (PRA 2014)
 
 **Free-Space Optical Link Model** — The `pass-sweep` command provides a physically-grounded free-space link budget for satellite-to-ground QKD:
 
@@ -794,7 +794,7 @@ All CI lower bounds are clamped to 0; QBER CI upper is clamped to 0.5.
 
 ## Interpretation
 
-The curves show an engineering-facing "security budget." Loss reduces detections (sifted key), while noise and attacks raise QBER. Once QBER rises enough, the secret-key rate per pulse collapses to zero: you can still exchange bits, but you cannot distill secrecy. This makes the QKD security story measurable and testable, rather than rhetorical.
+The curves show an engineering-facing “security budget.” Loss reduces detections (sifted key), while noise and attacks raise QBER. Once QBER rises enough, the secret-key rate per pulse collapses to zero: you can still exchange bits, but you cannot distill secrecy. This makes the QKD security story measurable and testable, rather than rhetorical.
 
 ## Why it matters
 
@@ -804,9 +804,9 @@ Operators need to see where secrecy collapses long before it fails in the field.
 
 The codebase operates in two complementary modes:
 
-**Simulation World (assumptions → curves):** Configuration parameters and channel models flow through protocol simulators to produce security curves. Given loss profiles, detector parameters, and attack models, the system outputs QBER, secret fraction, and key rate metrics. This answers: "Given these assumptions, what is the security margin?"
+**Simulation Mode (assumptions → curves):** Configuration parameters and channel models flow through protocol simulators to produce security curves. Given loss profiles, detector parameters, and attack models, the system outputs QBER, secret fraction, and key rate metrics. This answers: “Given these assumptions, what is the security margin?”
 
-**Experiment/Telemetry World (observables → decisions):** Pass-time observables are ingested, parameters are estimated, and finite-key security decisions are made post-pass. This answers: "Given these measurements, can we extract a secure key?"
+**Experiment/Telemetry Mode (observables → decisions):** Pass-time observables are ingested, parameters are estimated, and finite-key security decisions are made post-pass. This answers: “Given these measurements, can we extract a secure key?”
 
 ### High-Level Pipeline
 
