@@ -562,7 +562,7 @@ key_rate_per_pulse = (n_sifted / n_sent) × secret_fraction
 - Demonstrates PNS attack resilience (motivation for real satellite QKD)
 
 References:
-- Lim et al., [Concise security bounds for practical decoy-state quantum key distribution.](https://doi.org/10.1103/PhysRevA.89.022307) (PRA 2014)
+- Lim et al., [Concise security bounds for practical decoy-state quantum key distribution.](https://doi.org/10.1103/PhysRevA.89.022307) (*Physical Review A* 2014)
 
 **CV-QKD (GG02) Scaffold** — The `cv-sweep` command provides a structural scaffold for Continuous-Variable QKD using Gaussian-modulated coherent states:
 - Computes SNR and mutual information I(A:B) vs channel loss
@@ -621,7 +621,7 @@ key_rate_per_pulse_finite = ell_bits / n_sent
 
 References:
 - Tomamichel et al., “Tight finite-key analysis for quantum cryptography” (*Nature Communications* 2012)
-- Lim et al., “Concise security bounds for practical decoy-state QKD” (PRA 2014)
+- Lim et al., “Concise security bounds for practical decoy-state QKD” (*Physical Review A* 2014)
 
 **Free-Space Optical Link Model** — The `pass-sweep` command provides a physically-grounded free-space link budget for satellite-to-ground QKD:
 
