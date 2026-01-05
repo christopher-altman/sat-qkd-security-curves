@@ -239,13 +239,9 @@ Satellite and fibre QKD systems live or die on a simple fact: bits can still flo
 
 Operationally, it supports delayed-classical CONOPS: during a satellite pass, only qubits may be downlinked; basis reconciliation and key distillation can occur later via RF. In that setting, pass-time outputs are quality/viability proxies and forecasts, while QBER and key metrics are computed post-pass once classical context is available.
 
-## Hypothesis
+## Core Claim
 
-If we model (i) channel loss in dB, (ii) intrinsic measurement noise, and (iii) a simple active attack, we should see a sharp operational threshold: QBER rises past a regime where privacy amplification can no longer extract a secret key, even if classical throughput remains nonzero.
-
-## Thesis
-
-Security curves are only trustworthy if they respect instrument constraints. This lab ties link budgets, detector effects, and protocol thresholds into a single engineering picture and acts as a link‑budget → security‑budget translator for engineering decisions.
+If we model loss, noise, and a simple active attack under instrument-realistic constraints, we see an operational security cliff: QBER crosses a threshold where privacy amplification yields zero secret key even while bits still flow. This lab exists to make that cliff measurable and repeatable as an engineering decision boundary.
 
 ## Physics/Math Background
 
@@ -752,10 +748,10 @@ All CI lower bounds are clamped to 0; QBER CI upper is clamped to 0.5.
 - Interactive controls for loss, detector params, finite-key settings
 - Live plots update as parameters change
 - Summary metrics panel (QBER, key rate, abort status)
-- **Compare tab:** Select two `reports/assumptions.json` files to compute structured diffs (added/removed/changed parameters between runs).
+- **Compare tab:** Select two `reports/assumptions.json` files to compute a structured diff (added/removed/changed parameters).
 - **Export packets:** Create timestamped bundles of reports + plots + assumptions snapshots.
 
-**Assumptions artifact:** Every run that writes `reports/latest.json` also writes `reports/assumptions.json` with the exact configuration parameters used for that run. This enables run provenance tracking and parameter comparison via the dashboard Compare tab.
+**Assumptions snapshot:** `reports/assumptions.json` is written alongside `reports/latest.json` so you can reproduce runs and diff parameter changes.
 
 ## Interpretation
 
