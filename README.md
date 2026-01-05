@@ -636,6 +636,44 @@ The satellite-to-ground link model uses the following physical assumptions. Each
 
 For complete traceability, validation mapping, and invariants, see the full [Link Model Card](specs/contracts/LINK_MODEL_CARD.md).
 
+## Operator UX / Dashboard
+
+The Streamlit dashboard provides a graphical interface for running simulations without CLI expertise.
+
+### Launch
+
+```bash
+# Install dashboard dependencies
+./py -m pip install -e ".[dashboard]"
+
+# Launch dashboard (blinded by default)
+./py -m sat_qkd_lab.dashboard
+```
+
+### Modes
+
+- **Operator Mode** (default): Scenario cards, GO/NO-GO verdicts, plain-language explanations
+- **Researcher Mode**: Full parameter controls, raw JSON access, advanced plots
+
+### Persona Workflows
+
+- **Link Engineer:** Pass sweeps, loss vs elevation, fading analysis
+- **Cryptographer:** Finite-key analysis, epsilon budgets, security breakdowns
+- **Hardware Engineer:** Coincidence simulations, CAR/visibility, timing parameters
+- **Ops/Nontechnical:** Predefined scenarios, one-click runs, export packets
+
+### Export Packets
+
+Each run can produce an auditable export packet containing:
+- `latest.json` — Full simulation output
+- `assumptions.json` — Assumptions manifest snapshot
+- `summary.md` — Human-readable summary with GO/NO-GO verdict
+- `figures/` — All generated plots
+
+Export location: `exports/YYYY-MM-DD_HHMMSS_<scenario>/`
+
+For detailed persona definitions, screen specifications, guardrails, and acceptance criteria, see the full [Operator UX Contract](specs/contracts/OPERATOR_UX.md).
+
 ## Topics
 
 `quantum-key-distribution` · `qkd` · `quantum-cryptography` · `bb84` · `decoy-state` · `e91` · `ekert91` · `entanglement-based-qkd` · `cvqkd` · `continuous-variable-qkd` · `gg02` · `finite-key` · `privacy-amplification` · `information-reconciliation` · `noise-analysis` · `security-analysis` · `adversarial-attacks` · `simulation` · `satellite-communications` · `free-space-optics`
