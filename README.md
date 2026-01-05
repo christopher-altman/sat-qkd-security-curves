@@ -51,10 +51,10 @@ This framework supports **pass-time quality telemetry and post-pass security dis
   - [Hardware & Detectors](#hardware--detectors)
   - [Operations](#operations)
 - [CLI Examples](#cli-examples)
-- [Glossary (operational definitions)](#glossary-operational-definitions)
 - [Layout](#layout)
 - [Problem](#problem)
 - [Core Claim](#core-claim)
+- [Glossary (operational definitions)](#glossary-operational-definitions)
 - [Physics/Math Background](#physicsmath-background)
 - [Method](#method)
 - [Approach](#approach)
@@ -372,15 +372,6 @@ Quick run examples:
 ./py -m sat_qkd_lab.run coincidence-sim --loss-min 20 --loss-max 60 --steps 9 --outdir .
 ```
 
-## Glossary (operational definitions)
-
-- **QBER (Quantum Bit Error Rate):** Fraction of mismatched bits after sifting (range: 0 to 0.5). High QBER → low secrecy. Abort threshold: typically 11% for BB84.
-- **Secret fraction:** Fraction of sifted bits remaining after privacy amplification (range: 0 to 1). Zero means no extractable key.
-- **Key rate per pulse:** Secret bits generated per sent pulse (units: bits/pulse). Accounts for sifting factor (~0.5 for BB84) and secret fraction.
-- **Finite-key penalty:** Gap between asymptotic and finite-key rates due to statistical uncertainty (larger blocks → smaller penalty).
-- **Abort threshold:** QBER level where privacy amplification can no longer extract secrecy (11% for BB84, protocol-dependent).
-- **Headroom:** Distance to abort threshold (qber_abort - qber_mean). Positive headroom → margin for noise fluctuations.
-
 ## Layout
 
 ```
@@ -499,6 +490,15 @@ Operationally, it supports delayed-classical CONOPS: during a satellite pass, on
 ## Core Claim
 
 If we model loss, noise, and a simple active attack under instrument-realistic constraints, we see an operational security cliff: QBER crosses a threshold where privacy amplification yields zero secret key even while bits still flow. This lab exists to make that cliff measurable and repeatable as an engineering decision boundary.
+
+## Glossary (operational definitions)
+
+- **QBER (Quantum Bit Error Rate):** Fraction of mismatched bits after sifting (range: 0 to 0.5). High QBER → low secrecy. Abort threshold: typically 11% for BB84.
+- **Secret fraction:** Fraction of sifted bits remaining after privacy amplification (range: 0 to 1). Zero means no extractable key.
+- **Key rate per pulse:** Secret bits generated per sent pulse (units: bits/pulse). Accounts for sifting factor (~0.5 for BB84) and secret fraction.
+- **Finite-key penalty:** Gap between asymptotic and finite-key rates due to statistical uncertainty (larger blocks → smaller penalty).
+- **Abort threshold:** QBER level where privacy amplification can no longer extract secrecy (11% for BB84, protocol-dependent).
+- **Headroom:** Distance to abort threshold (qber_abort - qber_mean). Positive headroom → margin for noise fluctuations.
 
 ## Physics/Math Background
 
