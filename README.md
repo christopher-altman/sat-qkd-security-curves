@@ -51,6 +51,7 @@ This framework supports **pass-time quality telemetry and post-pass security dis
   - [Hardware & Detectors](#hardware--detectors)
   - [Operations](#operations)
 - [CLI Examples](#cli-examples)
+- [Glossary (operational definitions)](#glossary)
 - [Layout](#layout)
 - [Problem](#problem)
 - [Core Claim](#core-claim)
@@ -69,7 +70,7 @@ This framework supports **pass-time quality telemetry and post-pass security dis
 - [Why it matters](#why-it-matters)
 - [Architecture](#architecture)
   - [High-Level Pipeline](#high-level-pipeline)
-  - [Override Safety](#override-safety)
+  - [Override Safety (Simulator)](#override-safety)
 - [Physical Assumptions (Link Model Card)](#physical-assumptions-link-model-card)
   - [Key Link Parameters](#key-link-parameters)
   - [Model Characteristics](#model-characteristics)
@@ -371,7 +372,7 @@ Quick run examples:
 ./py -m sat_qkd_lab.run coincidence-sim --loss-min 20 --loss-max 60 --steps 9 --outdir .
 ```
 
-#### Glossary (operational definitions)
+### Glossary (operational definitions)
 
 - **QBER (Quantum Bit Error Rate):** Fraction of mismatched bits after sifting (range: 0 to 0.5). High QBER → low secrecy. Abort threshold: typically 11% for BB84.
 - **Secret fraction:** Fraction of sifted bits remaining after privacy amplification (range: 0 to 1). Zero means no extractable key.
@@ -860,7 +861,7 @@ flowchart LR
     RN --> PL
 ```
 
-### Override Safety
+### Override Safety (Simulator)
 
 When extending the codebase, understanding where changes are safe is critical:
 
