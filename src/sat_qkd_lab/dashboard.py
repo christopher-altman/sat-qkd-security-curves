@@ -21,6 +21,8 @@ from sat_qkd_lab.dashboard_helpers import (
     get_glossary_entry,
     format_glossary_markdown,
     create_export_packet,
+    compute_assumptions_diff,
+    format_diff_markdown,
 )
 
 DASHBOARD_PLOTS = {
@@ -156,12 +158,15 @@ def run() -> None:
 
     _write_latest_dashboard(outdir_path, last_action=None, ui_state={"unblind": bool(ui_unblind), "nontechnical": bool(nontechnical_mode)})
 
-    tab_sweep, tab_pass, tab_experiment, tab_forecast, tab_ops, tab_instrument, tab_protocol, tab_incidents = st.tabs(
-        ["Sweep", "Pass", "Experiment", "Forecast", "Ops", "Instrument", "Protocol", "Incidents"]
+    tab_sweep, tab_pass, tab_experiment, tab_forecast, tab_ops, tab_instrument, tab_protocol, tab_incidents, tab_compare = st.tabs(
+        ["Sweep", "Pass", "Experiment", "Forecast", "Ops", "Instrument", "Protocol", "Incidents", "Compare"]
     )
 
     with tab_sweep:
         st.subheader("BB84 Sweep")
+        st.markdown("Simulate BB84 QKD across a range of channel loss values to characterize key rate vs QBER.")
+
+        st.markdown("---")
 
         # Use preset values if available
         if active_preset:
@@ -173,25 +178,46 @@ def run() -> None:
         if nontechnical_mode:
             st.info("**Nontechnical mode active**: Select a preset from the sidebar and click 'Run sweep' below. Advanced controls are hidden.")
             with st.expander("Advanced controls (optional)", expanded=False):
-                loss_min = st.number_input("Loss min (dB)", value=preset_vals.get("loss_min", 20.0), key="sweep_loss_min")
-                loss_max = st.number_input("Loss max (dB)", value=preset_vals.get("loss_max", 60.0), key="sweep_loss_max")
-                steps = st.number_input("Steps", value=preset_vals.get("steps", 21), step=1, key="sweep_steps")
-                flip_prob = st.number_input("Flip probability", value=preset_vals.get("flip_prob", 0.005), key="sweep_flip_prob")
-                pulses = st.number_input("Pulses", value=preset_vals.get("pulses", 200000), step=1000, key="sweep_pulses")
-                seed = st.number_input("Seed", value=0, step=1, key="sweep_seed")
-                eta = st.number_input("Detector efficiency", value=preset_vals.get("eta", float(DEFAULT_DETECTOR.eta)), key="sweep_eta")
-                p_bg = st.number_input("Background probability", value=preset_vals.get("p_bg", float(DEFAULT_DETECTOR.p_bg)), key="sweep_p_bg")
+                col1, col2 = st.columns(2)
+                with col1:
+                    loss_min = st.number_input("Loss min (dB)", value=preset_vals.get("loss_min", 20.0), key="sweep_loss_min")
+                    steps = st.number_input("Steps", value=preset_vals.get("steps", 21), step=1, key="sweep_steps")
+                    pulses = st.number_input("Pulses", value=preset_vals.get("pulses", 200000), step=1000, key="sweep_pulses")
+                    eta = st.number_input("Detector efficiency", value=preset_vals.get("eta", float(DEFAULT_DETECTOR.eta)), key="sweep_eta")
+                with col2:
+                    loss_max = st.number_input("Loss max (dB)", value=preset_vals.get("loss_max", 60.0), key="sweep_loss_max")
+                    flip_prob = st.number_input("Flip probability", value=preset_vals.get("flip_prob", 0.005), key="sweep_flip_prob")
+                    seed = st.number_input("Seed", value=0, step=1, key="sweep_seed")
+                    p_bg = st.number_input("Background probability", value=preset_vals.get("p_bg", float(DEFAULT_DETECTOR.p_bg)), key="sweep_p_bg")
         else:
-            loss_min = st.number_input("Loss min (dB)", value=preset_vals.get("loss_min", 20.0), key="sweep_loss_min")
-            loss_max = st.number_input("Loss max (dB)", value=preset_vals.get("loss_max", 60.0), key="sweep_loss_max")
-            steps = st.number_input("Steps", value=preset_vals.get("steps", 21), step=1, key="sweep_steps")
-            flip_prob = st.number_input("Flip probability", value=preset_vals.get("flip_prob", 0.005), key="sweep_flip_prob")
-            pulses = st.number_input("Pulses", value=preset_vals.get("pulses", 200000), step=1000, key="sweep_pulses")
-            seed = st.number_input("Seed", value=0, step=1, key="sweep_seed")
-            eta = st.number_input("Detector efficiency", value=preset_vals.get("eta", float(DEFAULT_DETECTOR.eta)), key="sweep_eta", help=get_glossary_entry("Detector Efficiency").get("definition", ""))
-            p_bg = st.number_input("Background probability", value=preset_vals.get("p_bg", float(DEFAULT_DETECTOR.p_bg)), key="sweep_p_bg", help="Background/dark click probability per pulse")
+            with st.container():
+                st.markdown("#### Loss Sweep Parameters")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    loss_min = st.number_input("Loss min (dB)", value=preset_vals.get("loss_min", 20.0), key="sweep_loss_min", help="Minimum channel loss in dB")
+                with col2:
+                    loss_max = st.number_input("Loss max (dB)", value=preset_vals.get("loss_max", 60.0), key="sweep_loss_max", help="Maximum channel loss in dB")
+                with col3:
+                    steps = st.number_input("Steps", value=preset_vals.get("steps", 21), step=1, key="sweep_steps", help="Number of loss values to simulate")
 
-        if st.button("Run sweep"):
+            st.markdown("#### Protocol Parameters")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                flip_prob = st.number_input("Flip probability", value=preset_vals.get("flip_prob", 0.005), key="sweep_flip_prob", help="Bit flip probability for basis mismatch")
+            with col2:
+                pulses = st.number_input("Pulses", value=preset_vals.get("pulses", 200000), step=1000, key="sweep_pulses", help="Number of pulses to simulate")
+            with col3:
+                seed = st.number_input("Seed", value=0, step=1, key="sweep_seed", help="Random seed for reproducibility")
+
+            st.markdown("#### Detector Parameters")
+            col1, col2 = st.columns(2)
+            with col1:
+                eta = st.number_input("Detector efficiency", value=preset_vals.get("eta", float(DEFAULT_DETECTOR.eta)), key="sweep_eta", help="Detector quantum efficiency (fraction of photons detected)")
+            with col2:
+                p_bg = st.number_input("Background probability", value=preset_vals.get("p_bg", float(DEFAULT_DETECTOR.p_bg)), key="sweep_p_bg", help="Background/dark click probability per pulse")
+
+        st.markdown("---")
+        if st.button("Run sweep", type="primary", use_container_width=True):
             det = DetectorParams(eta=float(eta), p_bg=float(p_bg))
             loss_vals = [loss_min + i * (loss_max - loss_min) / (steps - 1) for i in range(int(steps))]
             records_no = sweep_loss(loss_vals, flip_prob=float(flip_prob), n_pulses=int(pulses), seed=int(seed), detector=det)
@@ -225,6 +251,9 @@ def run() -> None:
 
     with tab_pass:
         st.subheader("Pass Sweep")
+        st.markdown("Simulate a satellite pass overhead to analyze key rate vs elevation and secure window duration.")
+
+        st.markdown("---")
 
         # Use preset values if available
         if active_preset:
@@ -236,19 +265,33 @@ def run() -> None:
         if nontechnical_mode:
             st.info("**Nontechnical mode active**: Select a preset from the sidebar and click 'Run pass sweep' below.")
             with st.expander("Advanced controls (optional)", expanded=False):
-                max_elevation = st.number_input("Max elevation (deg)", value=preset_vals.get("max_elevation", 60.0), key="pass_max_elev")
-                min_elevation = st.number_input("Min elevation (deg)", value=preset_vals.get("min_elevation", 10.0), key="pass_min_elev")
-                pass_seconds = st.number_input("Pass seconds", value=preset_vals.get("pass_seconds", 300.0), key="pass_seconds")
-                dt_seconds = st.number_input("Time step (s)", value=preset_vals.get("dt_seconds", 5.0), key="pass_dt")
-                rep_rate = st.number_input("Rep rate (Hz)", value=preset_vals.get("rep_rate", 1e8), key="pass_rep_rate")
+                col1, col2 = st.columns(2)
+                with col1:
+                    max_elevation = st.number_input("Max elevation (deg)", value=preset_vals.get("max_elevation", 60.0), key="pass_max_elev")
+                    pass_seconds = st.number_input("Pass seconds", value=preset_vals.get("pass_seconds", 300.0), key="pass_seconds")
+                    rep_rate = st.number_input("Rep rate (Hz)", value=preset_vals.get("rep_rate", 1e8), key="pass_rep_rate")
+                with col2:
+                    min_elevation = st.number_input("Min elevation (deg)", value=preset_vals.get("min_elevation", 10.0), key="pass_min_elev")
+                    dt_seconds = st.number_input("Time step (s)", value=preset_vals.get("dt_seconds", 5.0), key="pass_dt")
         else:
-            max_elevation = st.number_input("Max elevation (deg)", value=preset_vals.get("max_elevation", 60.0), key="pass_max_elev")
-            min_elevation = st.number_input("Min elevation (deg)", value=preset_vals.get("min_elevation", 10.0), key="pass_min_elev")
-            pass_seconds = st.number_input("Pass seconds", value=preset_vals.get("pass_seconds", 300.0), key="pass_seconds")
-            dt_seconds = st.number_input("Time step (s)", value=preset_vals.get("dt_seconds", 5.0), key="pass_dt")
-            rep_rate = st.number_input("Rep rate (Hz)", value=preset_vals.get("rep_rate", 1e8), key="pass_rep_rate")
+            st.markdown("#### Pass Geometry")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                max_elevation = st.number_input("Max elevation (deg)", value=preset_vals.get("max_elevation", 60.0), key="pass_max_elev", help="Maximum elevation angle at zenith (degrees)")
+            with col2:
+                min_elevation = st.number_input("Min elevation (deg)", value=preset_vals.get("min_elevation", 10.0), key="pass_min_elev", help="Minimum elevation angle for visibility (degrees)")
+            with col3:
+                pass_seconds = st.number_input("Pass duration (s)", value=preset_vals.get("pass_seconds", 300.0), key="pass_seconds", help="Total pass duration in seconds")
 
-        if st.button("Run pass sweep"):
+            st.markdown("#### Simulation Parameters")
+            col1, col2 = st.columns(2)
+            with col1:
+                dt_seconds = st.number_input("Time step (s)", value=preset_vals.get("dt_seconds", 5.0), key="pass_dt", help="Time resolution for simulation (seconds)")
+            with col2:
+                rep_rate = st.number_input("Repetition rate (Hz)", value=preset_vals.get("rep_rate", 1e8), key="pass_rep_rate", help="Pulse repetition rate (Hz)")
+
+        st.markdown("---")
+        if st.button("Run pass sweep", type="primary", use_container_width=True):
             params = PassModelParams(
                 max_elevation_deg=float(max_elevation),
                 min_elevation_deg=float(min_elevation),
@@ -381,6 +424,102 @@ def run() -> None:
             st.dataframe(pass_report["incidents"])
         else:
             st.write("No incident cards available.")
+
+    with tab_compare:
+        st.subheader("Compare Runs (Assumptions Diff)")
+
+        st.markdown("""
+        Compare two assumptions snapshots to see which parameters changed between runs.
+        Select two `assumptions.json` files and click **Compute diff** to see what changed.
+        """)
+
+        # File path inputs
+        assumptions_file_1 = st.text_input(
+            "First assumptions file",
+            value=str(outdir_path / "reports" / "assumptions.json"),
+            key="compare_file_1",
+            help="Path to first assumptions.json file (e.g., reports/assumptions.json or reports/exports/export_1/assumptions.json)"
+        )
+
+        assumptions_file_2 = st.text_input(
+            "Second assumptions file",
+            value=str(outdir_path / "reports" / "assumptions.json"),
+            key="compare_file_2",
+            help="Path to second assumptions.json file to compare against the first"
+        )
+
+        if st.button("Compute diff", key="compute_diff_button"):
+            # Load files
+            path1 = Path(assumptions_file_1)
+            path2 = Path(assumptions_file_2)
+
+            error_occurred = False
+
+            if not path1.exists():
+                st.error(f"File not found: {path1}")
+                error_occurred = True
+
+            if not path2.exists():
+                st.error(f"File not found: {path2}")
+                error_occurred = True
+
+            if not error_occurred:
+                try:
+                    with open(path1, "r") as f:
+                        assumptions_1 = json.load(f)
+
+                    with open(path2, "r") as f:
+                        assumptions_2 = json.load(f)
+
+                    # Compute diff
+                    diff = compute_assumptions_diff(assumptions_1, assumptions_2)
+
+                    # Display results
+                    st.success("Diff computed successfully.")
+
+                    added_count = len(diff["added"])
+                    removed_count = len(diff["removed"])
+                    changed_count = len(diff["changed"])
+
+                    st.metric("Added parameters", added_count)
+                    st.metric("Removed parameters", removed_count)
+                    st.metric("Changed parameters", changed_count)
+
+                    if added_count == 0 and removed_count == 0 and changed_count == 0:
+                        st.info("No differences detected. The assumptions are identical.")
+                    else:
+                        # Show diff sections
+                        if diff["added"]:
+                            with st.expander(f"Added parameters ({added_count})", expanded=True):
+                                for path, value in sorted(diff["added"].items()):
+                                    st.code(f"{path}: {value}", language="text")
+
+                        if diff["removed"]:
+                            with st.expander(f"Removed parameters ({removed_count})", expanded=True):
+                                for path, value in sorted(diff["removed"].items()):
+                                    st.code(f"{path}: {value}", language="text")
+
+                        if diff["changed"]:
+                            with st.expander(f"Changed parameters ({changed_count})", expanded=True):
+                                for path, change in sorted(diff["changed"].items()):
+                                    old_val = change["old"]
+                                    new_val = change["new"]
+                                    st.code(f"{path}:\n  old: {old_val}\n  new: {new_val}", language="text")
+
+                        # Markdown download
+                        diff_markdown = format_diff_markdown(diff)
+                        st.download_button(
+                            "Download diff as markdown",
+                            data=diff_markdown,
+                            file_name=f"assumptions_diff_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.md",
+                            mime="text/markdown",
+                            key="download_diff_md"
+                        )
+
+                except json.JSONDecodeError as e:
+                    st.error(f"Failed to parse JSON: {e}")
+                except Exception as e:
+                    st.error(f"Error computing diff: {e}")
 
     with st.expander("Plot index", expanded=False):
         plot_index = _plot_index(outdir_path)

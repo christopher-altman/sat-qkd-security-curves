@@ -1307,6 +1307,16 @@ def _attach_manifest_and_git(report: dict[str, Any]) -> None:
         report["git_commit"] = get_git_commit()
 
 
+def _write_assumptions_snapshot(outdir: Path, report: dict[str, Any]) -> None:
+    """Write assumptions.json snapshot alongside latest.json for run provenance."""
+    assumptions_path = outdir / "reports" / "assumptions.json"
+    if "assumptions_manifest" in report:
+        with open(assumptions_path, "w") as f:
+            json.dump(report["assumptions_manifest"], f, indent=2)
+            f.write("\n")
+        print("Wrote:", assumptions_path)
+
+
 def _attach_replay_metadata(report: dict[str, Any], args: argparse.Namespace) -> None:
     replay_of = getattr(args, "replay_of", None)
     if replay_of:
@@ -1709,6 +1719,7 @@ def _run_sweep(args: argparse.Namespace) -> None:
         json.dump(report, f, indent=2)
         f.write("\n")  # Ensure trailing newline
     print("Wrote:", outdir / "reports" / "latest.json")
+    _write_assumptions_snapshot(outdir, report)
     _print_sweep_summary(
         loss_min=float(args.loss_min),
         loss_max=float(args.loss_max),
@@ -1799,6 +1810,7 @@ def _run_attack_sweep(args: argparse.Namespace) -> None:
         json.dump(report, f, indent=2)
         f.write("\n")
     print("Wrote:", outdir / "reports" / "latest.json")
+    _write_assumptions_snapshot(outdir, report)
     _print_sweep_summary(
         loss_min=float(args.loss_min),
         loss_max=float(args.loss_max),
@@ -1957,6 +1969,7 @@ def _run_sweep_finite_key(
         json.dump(report, f, indent=2)
         f.write("\n")
     print("Wrote:", outdir / "reports" / "latest.json")
+    _write_assumptions_snapshot(outdir, report)
 
 
 def _run_decoy_sweep(args: argparse.Namespace) -> None:
@@ -2104,6 +2117,7 @@ def _run_decoy_sweep(args: argparse.Namespace) -> None:
         json.dump(report, f, indent=2)
         f.write("\n")  # Ensure trailing newline
     print("Wrote:", report_path)
+    _write_assumptions_snapshot(outdir, report)
 
 
 def _run_pass_sweep(args: argparse.Namespace) -> None:
@@ -2626,6 +2640,7 @@ def _run_pass_sweep(args: argparse.Namespace) -> None:
         json.dump(report, f, indent=2)
         f.write("\n")
     print("Wrote:", report_path)
+    _write_assumptions_snapshot(outdir, report)
 
     pass_time_series = records_to_time_series(
         records_pass,
@@ -3893,6 +3908,7 @@ def _run_eb_sweep(args: argparse.Namespace) -> None:
         json.dump(report, f, indent=2)
         f.write("\n")  # Ensure trailing newline
     print("Wrote:", report_path)
+    _write_assumptions_snapshot(outdir, report)
 
     # Print summary
     qber_vals = [r["qber_mean"] for r in results]
@@ -4142,6 +4158,7 @@ def _run_cv_sweep(args: argparse.Namespace) -> None:
         json.dump(report, f, indent=2)
         f.write("\n")
     print("Wrote:", report_path)
+    _write_assumptions_snapshot(outdir, report)
 
     # Print summary
     print("CV-QKD (GG02) sweep summary")

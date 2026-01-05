@@ -65,6 +65,156 @@ def format_glossary_markdown() -> str:
     return "\n".join(lines)
 
 
+# Assumptions diff utilities
+
+def _normalize_path(parts: list) -> str:
+    """Convert path parts list to dot-separated string."""
+    return ".".join(str(p) for p in parts)
+
+
+def _values_equal(val1: Any, val2: Any, numeric_tolerance: float = 1e-9) -> bool:
+    """Compare two values with numeric tolerance."""
+    # If both are numbers, use tolerance
+    if isinstance(val1, (int, float)) and isinstance(val2, (int, float)):
+        return abs(float(val1) - float(val2)) < numeric_tolerance
+    # Otherwise, use exact equality
+    return val1 == val2
+
+
+def _flatten_dict(d: Any, parent_path: list = None) -> Dict[str, Any]:
+    """
+    Recursively flatten a nested dict/list structure into dot-separated paths.
+
+    Args:
+        d: Dictionary or list to flatten
+        parent_path: Current path as list of keys
+
+    Returns:
+        Flat dictionary with dot-separated keys
+    """
+    if parent_path is None:
+        parent_path = []
+
+    result = {}
+
+    if isinstance(d, dict):
+        for key, value in d.items():
+            current_path = parent_path + [key]
+            if isinstance(value, (dict, list)):
+                result.update(_flatten_dict(value, current_path))
+            else:
+                result[_normalize_path(current_path)] = value
+    elif isinstance(d, list):
+        for idx, value in enumerate(d):
+            current_path = parent_path + [idx]
+            if isinstance(value, (dict, list)):
+                result.update(_flatten_dict(value, current_path))
+            else:
+                result[_normalize_path(current_path)] = value
+    else:
+        # Scalar value at root (shouldn't happen for assumptions manifests)
+        result[_normalize_path(parent_path)] = d
+
+    return result
+
+
+def compute_assumptions_diff(old: dict, new: dict) -> dict:
+    """
+    Compare two assumptions manifests and return structured diff.
+
+    Args:
+        old: Old assumptions manifest dictionary
+        new: New assumptions manifest dictionary
+
+    Returns:
+        Dictionary with keys:
+        - "added": dict of {path: value} for keys in new but not old
+        - "removed": dict of {path: value} for keys in old but not new
+        - "changed": dict of {path: {"old": val, "new": val}} for changed values
+
+    Path format: dot-separated keys (e.g., "protocol.reconciliation.efficiency")
+
+    Note: Omits "git_commit" and "generated_utc" from diff (implementation noise).
+    """
+    # Ignore implementation noise fields
+    ignore_keys = {"git_commit", "generated_utc", "timestamp_utc"}
+
+    # Create copies without ignored keys
+    old_filtered = {k: v for k, v in old.items() if k not in ignore_keys}
+    new_filtered = {k: v for k, v in new.items() if k not in ignore_keys}
+
+    # Flatten both dictionaries
+    old_flat = _flatten_dict(old_filtered)
+    new_flat = _flatten_dict(new_filtered)
+
+    added = {}
+    removed = {}
+    changed = {}
+
+    # Find removed keys (in old but not new)
+    for path, value in old_flat.items():
+        if path not in new_flat:
+            removed[path] = value
+
+    # Find added keys (in new but not old)
+    for path, value in new_flat.items():
+        if path not in old_flat:
+            added[path] = value
+
+    # Find changed values (in both but different)
+    for path in old_flat:
+        if path in new_flat:
+            old_val = old_flat[path]
+            new_val = new_flat[path]
+            if not _values_equal(old_val, new_val):
+                changed[path] = {"old": old_val, "new": new_val}
+
+    return {
+        "added": added,
+        "removed": removed,
+        "changed": changed,
+    }
+
+
+def format_diff_markdown(diff: dict) -> str:
+    """
+    Format assumptions diff as readable markdown.
+
+    Args:
+        diff: Output from compute_assumptions_diff()
+
+    Returns:
+        Markdown-formatted diff report
+    """
+    lines = ["# Assumptions Diff Report\n"]
+
+    if not diff["added"] and not diff["removed"] and not diff["changed"]:
+        lines.append("**No differences detected.**\n")
+        return "\n".join(lines)
+
+    if diff["added"]:
+        lines.append("## Added Parameters\n")
+        for path, value in sorted(diff["added"].items()):
+            lines.append(f"- `{path}`: {value}")
+        lines.append("")
+
+    if diff["removed"]:
+        lines.append("## Removed Parameters\n")
+        for path, value in sorted(diff["removed"].items()):
+            lines.append(f"- `{path}`: {value}")
+        lines.append("")
+
+    if diff["changed"]:
+        lines.append("## Changed Parameters\n")
+        for path, change in sorted(diff["changed"].items()):
+            old_val = change["old"]
+            new_val = change["new"]
+            lines.append(f"- `{path}`: {old_val} → {new_val}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 def create_export_packet(
     outdir: Path,
     preset_name: Optional[str] = None,

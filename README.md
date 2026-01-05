@@ -752,10 +752,10 @@ All CI lower bounds are clamped to 0; QBER CI upper is clamped to 0.5.
 - Interactive controls for loss, detector params, finite-key settings
 - Live plots update as parameters change
 - Summary metrics panel (QBER, key rate, abort status)
-- **Compare tab:** Select two `assumptions.json` files to compute structured diffs (added/removed/changed parameters between runs)
-- **Export packets:** Create timestamped bundles of reports + plots + assumptions snapshots
+- **Compare tab:** Select two `reports/assumptions.json` files to compute structured diffs (added/removed/changed parameters between runs).
+- **Export packets:** Create timestamped bundles of reports + plots + assumptions snapshots.
 
-**Assumptions artifact:** Every run that writes `reports/latest.json` also writes `reports/assumptions.json` with the exact configuration parameters used for that run, enabling provenance and parameter diffing via the dashboard Compare tab.
+**Assumptions artifact:** Every run that writes `reports/latest.json` also writes `reports/assumptions.json` with the exact configuration parameters used for that run. This enables run provenance tracking and parameter comparison via the dashboard Compare tab.
 
 ## Interpretation
 
