@@ -542,53 +542,86 @@ The codebase operates in two complementary modes:
 
 ```mermaid
 flowchart LR
-    subgraph Config["Configuration"]
-        A[assumptions.py]
-        D[detector.py]
-        L[free_space_link.py]
+    subgraph Config["Configuration Layer"]
+        A[assumptions.py<br/>build_assumptions_manifest]
+        D[detector.py<br/>DetectorParams]
+        L[free_space_link.py<br/>FreeSpaceLinkParams]
     end
 
-    subgraph Link["Link/Channel"]
-        FL[total_link_loss_db]
-        AT[atmosphere.py]
-        OU[ou_fading.py]
+    subgraph Link["Link/Channel Models"]
+        FL[free_space_link.py<br/>total_link_loss_db]
+        AT[atmosphere.py<br/>compute_atmosphere_loss_db]
+        OU[ou_fading.py<br/>simulate_ou_transmittance]
+        PT[pointing.py<br/>PointingParams]
     end
 
-    subgraph Protocol["Protocol"]
-        BB[bb84.py]
-        DC[decoy_bb84.py]
-        EB[eb_qkd.py]
+    subgraph Protocol["Protocol Mechanics"]
+        BB[bb84.py<br/>simulate_bb84]
+        DC[decoy_bb84.py<br/>simulate_decoy_bb84]
+        EB[eb_qkd.py<br/>simulate_eb_qkd_expected]
+        CV[cv/gg02.py<br/>compute_secret_key_rate]
     end
 
-    subgraph Security["Security"]
-        FK[finite_key.py]
+    subgraph Security["Security Analysis"]
+        FK[finite_key.py<br/>finite_key_rate_per_pulse]
+        HB[finite_key.py<br/>hoeffding_bound]
     end
 
-    subgraph Output["Output"]
-        SW[sweep.py]
-        PL[plotting.py]
-        RN[run.py → JSON]
+    subgraph Estimation["Estimation/Inference"]
+        CF[calibration_fit.py<br/>fit_telemetry_parameters]
+        EO[eb_observables.py<br/>compute_observables]
+        CS[clock_sync.py<br/>estimate_offset_drift]
     end
 
-    A --> RN
-    D --> BB
-    L --> FL
-    AT --> FL
-    OU --> FL
+    subgraph Sweep["Sweep/Orchestration"]
+        SW[sweep.py<br/>sweep_loss, sweep_pass]
+        PM[pass_model.py<br/>compute_pass_records]
+        EX[experiment.py<br/>run_experiment]
+        FH[forecast_harness.py<br/>run_forecast_harness]
+    end
 
-    FL --> BB
-    FL --> DC
-    FL --> EB
+    subgraph Output["Reporting/Plots"]
+        PL[plotting.py<br/>plot_*]
+        RN[run.py<br/>CLI + JSON output]
+    end
 
-    BB --> SW
-    DC --> SW
-    EB --> SW
+    subgraph UI["Dashboard"]
+        DB[dashboard.py<br/>Streamlit UI]
+    end
 
-    SW --> FK
-    FK --> SW
+    A -->|assumptions dict| RN
+    D -->|eta, p_bg| BB
+    D -->|eta, p_bg| DC
+    L -->|link params| FL
 
-    SW --> RN
-    RN --> PL
+    FL -->|loss_db| BB
+    FL -->|loss_db| DC
+    FL -->|loss_db| EB
+    AT -->|atm_loss_db| FL
+    OU -->|transmittance samples| PM
+    PT -->|pointing loss| FL
+
+    BB -->|qber, secret_fraction| SW
+    DC -->|Q_1, e_1, key_rate| SW
+    EB -->|qber_mean, visibility| SW
+    CV -->|I_AB, chi_BE| SW
+
+    SW -->|metrics array| FK
+    FK -->|ell_bits, qber_upper| SW
+    HB -->|delta bound| FK
+
+    CF -->|fitted params| PM
+    EO -->|CHSH_S, visibility| EX
+    CS -->|offset, drift| EX
+
+    SW -->|sweep results| RN
+    PM -->|time-series records| RN
+    EX -->|experiment report| RN
+    FH -->|forecast report| RN
+
+    RN -->|JSON| PL
+    RN -->|latest.json| DB
+    PL -->|PNG figures| DB
 ```
 
 ### Override Safety
