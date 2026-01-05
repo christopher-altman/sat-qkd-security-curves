@@ -568,7 +568,7 @@ References:
 - Computes SNR and mutual information I(A:B) vs channel loss
 - Holevo bound computation is **stubbed** (returns None)
 - Secret key rate is **not yet validated** (requires full Holevo bound)
-- Status: scaffold — NOT for production security claims
+- Status: model / scaffold — NOT for production security claims
 
 This is a minimal demonstration of CV-QKD interfaces and assumptions manifest integration. See `docs/12_cvqkd_scaffold.md` for validation gates required before production use.
 
