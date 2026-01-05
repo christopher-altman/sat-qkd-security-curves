@@ -372,7 +372,7 @@ Quick run examples:
 ./py -m sat_qkd_lab.run coincidence-sim --loss-min 20 --loss-max 60 --steps 9 --outdir .
 ```
 
-### Glossary (operational definitions)
+## Glossary (operational definitions)
 
 - **QBER (Quantum Bit Error Rate):** Fraction of mismatched bits after sifting (range: 0 to 0.5). High QBER → low secrecy. Abort threshold: typically 11% for BB84.
 - **Secret fraction:** Fraction of sifted bits remaining after privacy amplification (range: 0 to 1). Zero means no extractable key.
