@@ -5,10 +5,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      MPLBACKEND: Agg
     strategy:
       matrix:
         python-version: ["3.10", "3.11"]
@@ -19,11 +22,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Create venv
+        run: python -m venv .venv
       - name: Upgrade pip
-        run: python -m pip install -U pip
+        run: .venv/bin/python -m pip install -U pip setuptools wheel
       - name: Install project
-        run: python -m pip install -e .
+        run: .venv/bin/python -m pip install -e .
       - name: Install test dependencies
-        run: python -m pip install pytest hypothesis
+        run: .venv/bin/python -m pip install pytest hypothesis
       - name: Run tests
-        run: python -m pytest -q
+        run: .venv/bin/python -m pytest -q
