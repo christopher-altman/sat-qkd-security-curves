@@ -115,218 +115,6 @@ Quick run examples:
 ./py -m sat_qkd_lab.run coincidence-sim --loss-min 20 --loss-max 60 --steps 9 --outdir .
 ```
 
-## Recipes by persona
-
-### Link engineer (optical/channel)
-
-**Goal:** Sanity-check link sensitivity (loss, pointing, turbulence/fading) and spot the "security cliff."
-
-#### Recipe 1: Loss sweep to reproduce headline curves
-
-```bash
-./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 200000
-```
-
-**Outputs:**
-- `figures/key_qber_vs_loss.png` - QBER vs channel loss
-- `figures/key_fraction_vs_loss.png` - Secret fraction vs loss
-- `reports/latest.json` - Full sweep metrics
-
-**What to look for:**
-- Monotonic QBER increase with loss (background/dark clicks dominating at high loss)
-- Secret fraction cliff where QBER crosses abort threshold (~11%)
-- Key rate per pulse approaching zero at security boundary
-
-#### Recipe 2: Satellite pass with turbulence/scintillation
-
-```bash
-./py -m sat_qkd_lab.run pass-sweep --max-elevation 70 --pass-duration 300 --turbulence --sigma-ln 0.3
-```
-
-**Outputs:**
-- `figures/key_rate_vs_elevation.png` - Key rate over pass elevation profile
-- `figures/loss_vs_elevation.png` - Link loss budget vs elevation
-- `figures/secure_window_per_pass.png` - Secure window timing
-- `reports/latest_pass.json` - Pass time-series and summary
-
-**What to look for:**
-- Elevation-dependent loss (airmass scaling)
-- Turbulence-induced QBER variance (fading effects)
-- Secure window fragmentation (outage events)
-
-#### Recipe 3: Day vs night background sensitivity
-
-```bash
-# Night-time baseline
-./py -m sat_qkd_lab.run pass-sweep --max-elevation 70 --pass-duration 300
-
-# Day-time (100x background increase)
-./py -m sat_qkd_lab.run pass-sweep --max-elevation 70 --pass-duration 300 --day --day-bg-factor 100
-```
-
-**Outputs:**
-- Same as Recipe 2 (figures and reports/latest_pass.json)
-
-**What to look for:**
-- Background-induced QBER floor in daytime scenario
-- Reduction in secure window duration and total secret bits
-- Shift in viability threshold (minimum usable elevation angle)
-
----
-
-### Cryptographer (finite-key / eps settings)
-
-**Goal:** Show how finite-key penalties and security parameters change viability.
-
-#### Recipe 1: Baseline BB84 sweep (asymptotic)
-
-```bash
-./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 200000
-```
-
-**Outputs:**
-- `figures/key_qber_vs_loss.png`
-- `figures/key_fraction_vs_loss.png`
-- `reports/latest.json`
-
-**What to look for:**
-- Asymptotic secret fraction (1 - 2*h(QBER) for BB84)
-- Abort threshold crossing (QBER > 11%)
-- Key rate per pulse scaling with sifted fraction
-
-#### Recipe 2: Finite-key analysis with epsilon budget
-
-```bash
-./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 500000 --finite-key --eps-pe 1e-10 --eps-sec 1e-10 --eps-cor 1e-15
-```
-
-**Outputs:**
-- `figures/finite_key_comparison.png` - Asymptotic vs finite-key rates
-- `figures/finite_size_penalty.png` - Penalty factor vs loss
-- `figures/finite_key_bits_vs_loss.png` - Extractable secret bits
-- `reports/latest.json` (includes finite_key_sweep fields)
-
-**What to look for:**
-- Finite-key penalty (gap between asymptotic and finite-key rates)
-- Penalty scaling with block size (larger blocks → smaller penalty)
-- Security boundary shift (finite-key rate hits zero earlier than asymptotic)
-- Epsilon budget allocation (eps_pe + eps_sec + eps_cor = eps_total)
-
-#### Recipe 3: Attack comparison sweep
-
-```bash
-./py -m sat_qkd_lab.run attack-sweep --loss-min 20 --loss-max 50 --steps 9 --pulses 50000
-```
-
-**Outputs:**
-- `figures/attack_comparison_key_rate.png` - Key rates under different attack models
-- `reports/latest.json` (includes attack_sweep results)
-
-**What to look for:**
-- Intercept-resend attack signature (QBER spike, key rate collapse)
-- PNS attack effect on multi-photon pulses
-- Attack detection via QBER monitoring (crossing expected noise floor)
-
----
-
-### Hardware dev (detectors/background/timing)
-
-**Goal:** Show detector/dark/background sensitivity and its effect on QBER and viability.
-
-#### Recipe 1: Detector efficiency sensitivity
-
-```bash
-# High efficiency (eta = 0.4)
-./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 200000 --eta 0.4
-
-# Low efficiency (eta = 0.1)
-./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 200000 --eta 0.1
-```
-
-**Outputs:**
-- `figures/key_qber_vs_loss.png`
-- `figures/key_fraction_vs_loss.png`
-- `reports/latest.json`
-
-**What to look for:**
-- Lower eta → fewer sifted bits at same loss
-- Lower eta → background-dominated regime at lower loss values
-- Detection rate vs QBER tradeoff
-
-#### Recipe 2: Background/dark count sensitivity
-
-```bash
-# Low background (p_bg = 1e-6)
-./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 200000 --p-bg 1e-6
-
-# High background (p_bg = 1e-3)
-./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 200000 --p-bg 1e-3
-```
-
-**Outputs:**
-- `figures/key_qber_vs_loss.png`
-- `figures/qber_headroom_vs_loss.png`
-- `reports/latest.json`
-
-**What to look for:**
-- High p_bg → QBER floor even at low loss
-- Background-limited secure distance (maximum tolerable loss)
-- Headroom reduction (distance to abort threshold)
-
-#### Recipe 3: Decoy-state BB84 analysis
-
-```bash
-./py -m sat_qkd_lab.run decoy-sweep --loss-min 20 --loss-max 50 --steps 16 --pulses 200000
-```
-
-**Outputs:**
-- `figures/decoy_key_rate_vs_loss.png` - Decoy-state key rate
-- `reports/latest.json` (includes decoy_sweep results)
-
-**What to look for:**
-- Single-photon contribution bounds (vacuum + weak decoy protocol)
-- PNS attack resilience (decoy vs standard BB84 comparison)
-- Intensity modulation effects (signal vs decoy vs vacuum states)
-
----
-
-### Ops / nontechnical (two-button workflow)
-
-**Goal:** Minimal cognitive load: "run this; read these 2 numbers; decide go/no-go."
-
-#### Recipe 1: Single-command full analysis
-
-```bash
-./py -m sat_qkd_lab.run pass-sweep --max-elevation 70 --pass-duration 300
-```
-
-**Outputs:**
-- `figures/key_rate_vs_elevation.png`
-- `figures/secure_window_per_pass.png`
-- `reports/latest_pass.json`
-
-**What to look for:**
-- Open `figures/key_rate_vs_elevation.png` and check for positive key rate during pass
-- Open `reports/latest_pass.json` and read `summary.total_secret_bits` (target: > 1e6 bits)
-- Go/no-go: If total_secret_bits > threshold and QBER < 11%, pass is viable
-
-#### Recipe 2: Dashboard (interactive exploration)
-
-```bash
-# Install dashboard dependencies (one-time)
-./py -m pip install -e ".[dashboard]"
-
-# Launch dashboard
-./py -m sat_qkd_lab.dashboard
-```
-
-**Access:** Open browser to `http://localhost:8501`
-
-**What to look for:**
-- Interactive sliders for loss, detector params, finite-key settings
-- Live plots update as parameters change
-- Summary metrics panel (QBER, key rate, abort status)
-
 #### Glossary (operational definitions)
 
 - **QBER (Quantum Bit Error Rate):** Fraction of mismatched bits after sifting (range: 0 to 0.5). High QBER → low secrecy. Abort threshold: typically 11% for BB84.
@@ -750,6 +538,224 @@ For finite-key sweeps (`--finite-key`), the JSON includes additional fields:
 ```
 
 All CI lower bounds are clamped to 0; QBER CI upper is clamped to 0.5.
+
+## Operator Workflows
+
+**Purpose:** Role-based workflows with reproducible commands, expected outputs, and explicit pass/fail gates.
+
+### Link Engineering
+
+**Goal:** Sanity-check link sensitivity (loss, pointing, turbulence/fading) and spot the security cliff.
+
+#### Workflow 1: Loss sweep to reproduce headline curves
+
+```bash
+./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 200000
+```
+
+**Outputs:**
+- `figures/key_qber_vs_loss.png` — QBER vs channel loss
+- `figures/key_fraction_vs_loss.png` — Secret fraction vs loss
+- `reports/latest.json` — Full sweep metrics
+
+**What to look for:**
+- Monotonic QBER increase with loss (background/dark clicks dominating at high loss)
+- Secret fraction cliff where QBER crosses abort threshold (~11%)
+- Key rate per pulse approaching zero at the security boundary
+
+#### Workflow 2: Satellite pass with turbulence/scintillation
+
+```bash
+./py -m sat_qkd_lab.run pass-sweep --max-elevation 70 --pass-duration 300 --turbulence --sigma-ln 0.3
+```
+
+**Outputs:**
+- `figures/key_rate_vs_elevation.png` — Key rate over pass elevation profile
+- `figures/loss_vs_elevation.png` — Link loss budget vs elevation
+- `figures/secure_window_per_pass.png` — Secure window timing
+- `reports/latest_pass.json` — Pass time-series and summary
+
+**What to look for:**
+- Elevation-dependent loss (airmass scaling)
+- Turbulence-induced QBER variance (fading effects)
+- Secure window fragmentation (outage events)
+
+#### Workflow 3: Day vs night background sensitivity
+
+```bash
+# Night-time baseline
+./py -m sat_qkd_lab.run pass-sweep --max-elevation 70 --pass-duration 300
+
+# Day-time (100x background increase)
+./py -m sat_qkd_lab.run pass-sweep --max-elevation 70 --pass-duration 300 --day --day-bg-factor 100
+```
+
+**Outputs:**
+- Same as Workflow 2 (figures + `reports/latest_pass.json`)
+
+**What to look for:**
+- Background-induced QBER floor in daytime scenario
+- Reduction in secure window duration and total secret bits
+- Shift in viability threshold (minimum usable elevation angle)
+
+---
+
+### Cryptography & Security
+
+**Goal:** Show how finite-key penalties and security parameters change viability.
+
+#### Workflow 1: Baseline BB84 sweep (asymptotic)
+
+```bash
+./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 200000
+```
+
+**Outputs:**
+- `figures/key_qber_vs_loss.png`
+- `figures/key_fraction_vs_loss.png`
+- `reports/latest.json`
+
+**What to look for:**
+- Asymptotic secret fraction (≈ 1 − 2·h(QBER) for BB84)
+- Abort threshold crossing (QBER > ~11%)
+- Key rate per pulse scaling with sifted fraction
+
+#### Workflow 2: Finite-key analysis with epsilon budget
+
+```bash
+./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 500000 --finite-key --eps-pe 1e-10 --eps-sec 1e-10 --eps-cor 1e-15
+```
+
+**Outputs:**
+- `figures/finite_key_comparison.png` — Asymptotic vs finite-key rates
+- `figures/finite_size_penalty.png` — Penalty factor vs loss
+- `figures/finite_key_bits_vs_loss.png` — Extractable secret bits
+- `reports/latest.json` (includes `finite_key_sweep` fields)
+
+**What to look for:**
+- Finite-key penalty (gap between asymptotic and finite-key rates)
+- Penalty scaling with block size (larger blocks → smaller penalty)
+- Security boundary shift (finite-key rate hits zero earlier than asymptotic)
+- Epsilon budget allocation (eps_pe + eps_sec + eps_cor = eps_total)
+
+#### Workflow 3: Attack comparison sweep
+
+```bash
+./py -m sat_qkd_lab.run attack-sweep --loss-min 20 --loss-max 50 --steps 9 --pulses 50000
+```
+
+**Outputs:**
+- `figures/attack_comparison_key_rate.png` — Key rates under different attack models
+- `reports/latest.json` (includes `attack_sweep` results)
+
+**What to look for:**
+- Intercept-resend signature (QBER spike, key rate collapse)
+- PNS impact on multi-photon pulses
+- Attack detectability via QBER monitoring (deviation from expected noise floor)
+
+---
+
+### Hardware & Detectors
+
+**Goal:** Show detector/dark/background sensitivity and its effect on QBER and viability.
+
+#### Workflow 1: Detector efficiency sensitivity
+
+```bash
+# High efficiency (eta = 0.4)
+./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 200000 --eta 0.4
+
+# Low efficiency (eta = 0.1)
+./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 200000 --eta 0.1
+```
+
+**Outputs:**
+- `figures/key_qber_vs_loss.png`
+- `figures/key_fraction_vs_loss.png`
+- `reports/latest.json`
+
+**What to look for:**
+- Lower eta → fewer sifted bits at the same loss
+- Lower eta → background-dominated regime at lower loss values
+- Detection rate vs QBER tradeoff
+
+#### Workflow 2: Background/dark count sensitivity
+
+```bash
+# Low background (p_bg = 1e-6)
+./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 200000 --p-bg 1e-6
+
+# High background (p_bg = 1e-3)
+./py -m sat_qkd_lab.run sweep --loss-min 20 --loss-max 60 --steps 21 --pulses 200000 --p-bg 1e-3
+```
+
+**Outputs:**
+- `figures/key_qber_vs_loss.png`
+- `figures/qber_headroom_vs_loss.png`
+- `reports/latest.json`
+
+**What to look for:**
+- High p_bg → QBER floor even at low loss
+- Background-limited secure distance (maximum tolerable loss)
+- Headroom reduction (distance to abort threshold)
+
+#### Workflow 3: Decoy-state BB84 analysis
+
+```bash
+./py -m sat_qkd_lab.run decoy-sweep --loss-min 20 --loss-max 50 --steps 16 --pulses 200000
+```
+
+**Outputs:**
+- `figures/decoy_key_rate_vs_loss.png` — Decoy-state key rate
+- `reports/latest.json` (includes `decoy_sweep` results)
+
+**What to look for:**
+- Single-photon contribution bounds (vacuum + weak decoy protocol)
+- PNS resilience (decoy vs standard BB84 comparison)
+- Intensity modulation effects (signal vs decoy vs vacuum)
+
+---
+
+### Operations
+
+**Goal:** Minimal cognitive load: run one command, read two numbers, decide go/no-go.
+
+#### Workflow 1: Single-command pass analysis
+
+```bash
+./py -m sat_qkd_lab.run pass-sweep --max-elevation 70 --pass-duration 300
+```
+
+**Outputs:**
+- `figures/key_rate_vs_elevation.png`
+- `figures/secure_window_per_pass.png`
+- `reports/latest_pass.json`
+
+**What to look for:**
+- Open `figures/key_rate_vs_elevation.png` and confirm positive key rate during the pass
+- Open `reports/latest_pass.json` and read `summary.total_secret_bits` (example target: > 1e6 bits)
+- Go/no-go: total_secret_bits > threshold AND QBER < ~11%
+
+#### Workflow 2: Dashboard (interactive exploration)
+
+```bash
+# Install dashboard dependencies (one-time)
+./py -m pip install -e ".[dashboard]"
+
+# Launch dashboard
+./py -m sat_qkd_lab.dashboard
+```
+
+**Access:** Open browser to `http://localhost:8501`
+
+**What to look for:**
+- Interactive controls for loss, detector params, finite-key settings
+- Live plots update as parameters change
+- Summary metrics panel (QBER, key rate, abort status)
+- **Compare tab:** Select two `assumptions.json` files to compute structured diffs (added/removed/changed parameters between runs)
+- **Export packets:** Create timestamped bundles of reports + plots + assumptions snapshots
+
+**Assumptions artifact:** Every run that writes `reports/latest.json` also writes `reports/assumptions.json` with the exact configuration parameters used for that run, enabling provenance and parameter diffing via the dashboard Compare tab.
 
 ## Interpretation
 

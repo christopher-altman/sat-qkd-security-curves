@@ -15,6 +15,13 @@ from sat_qkd_lab.plotting import plot_key_metrics_vs_loss, plot_key_rate_vs_elev
 from sat_qkd_lab.pass_model import PassModelParams, compute_pass_records
 from sat_qkd_lab.experiment import ExperimentParams, run_experiment
 from sat_qkd_lab.forecast_harness import run_forecast_harness
+from sat_qkd_lab.dashboard_presets import PRESETS, get_preset_by_name, list_preset_names
+from sat_qkd_lab.dashboard_helpers import (
+    GLOSSARY,
+    get_glossary_entry,
+    format_glossary_markdown,
+    create_export_packet,
+)
 
 DASHBOARD_PLOTS = {
     "car_vs_loss": "figures/car_vs_loss.png",
@@ -108,10 +115,46 @@ def run() -> None:
     st.set_page_config(page_title="sat-qkd-lab", layout="wide")
     st.title("Satellite QKD Lab Control Panel")
 
+    # Sidebar: Output directory and mode toggles
     outdir = st.sidebar.text_input("Output directory", value=".")
     outdir_path = _ensure_outdir(outdir)
     ui_unblind = st.sidebar.checkbox("Unblind (explicit)", value=False, key="ui_unblind")
-    _write_latest_dashboard(outdir_path, last_action=None, ui_state={"unblind": bool(ui_unblind)})
+    nontechnical_mode = st.sidebar.checkbox("Nontechnical mode", value=False, key="nontechnical_mode", help="Show simplified interface with presets and explanations")
+
+    # Preset selector
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Scenario Presets")
+    preset_names = ["Custom (manual controls)"] + list_preset_names()
+    selected_preset_name = st.sidebar.selectbox(
+        "Select preset",
+        preset_names,
+        index=0,
+        key="preset_selector",
+        help="Choose a preset scenario to populate parameters, or select Custom to set manually"
+    )
+
+    # Load preset if selected
+    active_preset = None
+    if selected_preset_name != "Custom (manual controls)":
+        active_preset = get_preset_by_name(selected_preset_name)
+        st.sidebar.info(f"**{active_preset.name}**\n\n{active_preset.description}")
+
+    # Export packet button
+    st.sidebar.markdown("---")
+    if st.sidebar.button("Export packet", help="Create timestamped export directory with reports, plots, and summary"):
+        export_dir = create_export_packet(
+            outdir_path,
+            preset_name=selected_preset_name if active_preset else None,
+            overrides={} if active_preset else {"mode": "custom"},
+        )
+        st.sidebar.success(f"Export created: {export_dir.name}")
+        st.sidebar.code(str(export_dir), language="text")
+
+    # Glossary expander
+    with st.sidebar.expander("Glossary", expanded=False):
+        st.markdown(format_glossary_markdown())
+
+    _write_latest_dashboard(outdir_path, last_action=None, ui_state={"unblind": bool(ui_unblind), "nontechnical": bool(nontechnical_mode)})
 
     tab_sweep, tab_pass, tab_experiment, tab_forecast, tab_ops, tab_instrument, tab_protocol, tab_incidents = st.tabs(
         ["Sweep", "Pass", "Experiment", "Forecast", "Ops", "Instrument", "Protocol", "Incidents"]
@@ -119,14 +162,34 @@ def run() -> None:
 
     with tab_sweep:
         st.subheader("BB84 Sweep")
-        loss_min = st.number_input("Loss min (dB)", value=20.0, key="sweep_loss_min")
-        loss_max = st.number_input("Loss max (dB)", value=60.0, key="sweep_loss_max")
-        steps = st.number_input("Steps", value=21, step=1, key="sweep_steps")
-        flip_prob = st.number_input("Flip probability", value=0.005, key="sweep_flip_prob")
-        pulses = st.number_input("Pulses", value=200000, step=1000, key="sweep_pulses")
-        seed = st.number_input("Seed", value=0, step=1, key="sweep_seed")
-        eta = st.number_input("Detector efficiency", value=float(DEFAULT_DETECTOR.eta), key="sweep_eta")
-        p_bg = st.number_input("Background probability", value=float(DEFAULT_DETECTOR.p_bg), key="sweep_p_bg")
+
+        # Use preset values if available
+        if active_preset:
+            preset_vals = active_preset.sweep_params
+        else:
+            preset_vals = {}
+
+        # Nontechnical mode: hide advanced controls
+        if nontechnical_mode:
+            st.info("**Nontechnical mode active**: Select a preset from the sidebar and click 'Run sweep' below. Advanced controls are hidden.")
+            with st.expander("Advanced controls (optional)", expanded=False):
+                loss_min = st.number_input("Loss min (dB)", value=preset_vals.get("loss_min", 20.0), key="sweep_loss_min")
+                loss_max = st.number_input("Loss max (dB)", value=preset_vals.get("loss_max", 60.0), key="sweep_loss_max")
+                steps = st.number_input("Steps", value=preset_vals.get("steps", 21), step=1, key="sweep_steps")
+                flip_prob = st.number_input("Flip probability", value=preset_vals.get("flip_prob", 0.005), key="sweep_flip_prob")
+                pulses = st.number_input("Pulses", value=preset_vals.get("pulses", 200000), step=1000, key="sweep_pulses")
+                seed = st.number_input("Seed", value=0, step=1, key="sweep_seed")
+                eta = st.number_input("Detector efficiency", value=preset_vals.get("eta", float(DEFAULT_DETECTOR.eta)), key="sweep_eta")
+                p_bg = st.number_input("Background probability", value=preset_vals.get("p_bg", float(DEFAULT_DETECTOR.p_bg)), key="sweep_p_bg")
+        else:
+            loss_min = st.number_input("Loss min (dB)", value=preset_vals.get("loss_min", 20.0), key="sweep_loss_min")
+            loss_max = st.number_input("Loss max (dB)", value=preset_vals.get("loss_max", 60.0), key="sweep_loss_max")
+            steps = st.number_input("Steps", value=preset_vals.get("steps", 21), step=1, key="sweep_steps")
+            flip_prob = st.number_input("Flip probability", value=preset_vals.get("flip_prob", 0.005), key="sweep_flip_prob")
+            pulses = st.number_input("Pulses", value=preset_vals.get("pulses", 200000), step=1000, key="sweep_pulses")
+            seed = st.number_input("Seed", value=0, step=1, key="sweep_seed")
+            eta = st.number_input("Detector efficiency", value=preset_vals.get("eta", float(DEFAULT_DETECTOR.eta)), key="sweep_eta", help=get_glossary_entry("Detector Efficiency").get("definition", ""))
+            p_bg = st.number_input("Background probability", value=preset_vals.get("p_bg", float(DEFAULT_DETECTOR.p_bg)), key="sweep_p_bg", help="Background/dark click probability per pulse")
 
         if st.button("Run sweep"):
             det = DetectorParams(eta=float(eta), p_bg=float(p_bg))
@@ -145,19 +208,45 @@ def run() -> None:
                 },
             }
             _write_json(outdir_path / "reports" / "dashboard_sweep.json", report)
-            _write_latest_dashboard(outdir_path, last_action="sweep", ui_state={"unblind": bool(ui_unblind)})
+            _write_latest_dashboard(outdir_path, last_action="sweep", ui_state={"unblind": bool(ui_unblind), "nontechnical": bool(nontechnical_mode)})
             st.success("Sweep complete.")
+
+            # Add explanations in nontechnical mode
+            if nontechnical_mode:
+                st.markdown("### What these plots show:")
+                st.markdown(get_glossary_entry("QBER")["interpretation"])
+                st.markdown(get_glossary_entry("Secret Fraction")["interpretation"])
+
             st.image(q_path)
             st.image(k_path)
-            st.json(report)
+
+            if not nontechnical_mode:
+                st.json(report)
 
     with tab_pass:
         st.subheader("Pass Sweep")
-        max_elevation = st.number_input("Max elevation (deg)", value=60.0, key="pass_max_elev")
-        min_elevation = st.number_input("Min elevation (deg)", value=10.0, key="pass_min_elev")
-        pass_seconds = st.number_input("Pass seconds", value=300.0, key="pass_seconds")
-        dt_seconds = st.number_input("Time step (s)", value=5.0, key="pass_dt")
-        rep_rate = st.number_input("Rep rate (Hz)", value=1e8, key="pass_rep_rate")
+
+        # Use preset values if available
+        if active_preset:
+            preset_vals = active_preset.pass_params
+        else:
+            preset_vals = {}
+
+        # Nontechnical mode: hide advanced controls
+        if nontechnical_mode:
+            st.info("**Nontechnical mode active**: Select a preset from the sidebar and click 'Run pass sweep' below.")
+            with st.expander("Advanced controls (optional)", expanded=False):
+                max_elevation = st.number_input("Max elevation (deg)", value=preset_vals.get("max_elevation", 60.0), key="pass_max_elev")
+                min_elevation = st.number_input("Min elevation (deg)", value=preset_vals.get("min_elevation", 10.0), key="pass_min_elev")
+                pass_seconds = st.number_input("Pass seconds", value=preset_vals.get("pass_seconds", 300.0), key="pass_seconds")
+                dt_seconds = st.number_input("Time step (s)", value=preset_vals.get("dt_seconds", 5.0), key="pass_dt")
+                rep_rate = st.number_input("Rep rate (Hz)", value=preset_vals.get("rep_rate", 1e8), key="pass_rep_rate")
+        else:
+            max_elevation = st.number_input("Max elevation (deg)", value=preset_vals.get("max_elevation", 60.0), key="pass_max_elev")
+            min_elevation = st.number_input("Min elevation (deg)", value=preset_vals.get("min_elevation", 10.0), key="pass_min_elev")
+            pass_seconds = st.number_input("Pass seconds", value=preset_vals.get("pass_seconds", 300.0), key="pass_seconds")
+            dt_seconds = st.number_input("Time step (s)", value=preset_vals.get("dt_seconds", 5.0), key="pass_dt")
+            rep_rate = st.number_input("Rep rate (Hz)", value=preset_vals.get("rep_rate", 1e8), key="pass_rep_rate")
 
         if st.button("Run pass sweep"):
             params = PassModelParams(
@@ -182,11 +271,21 @@ def run() -> None:
                 },
             }
             _write_json(outdir_path / "reports" / "dashboard_pass.json", report)
-            _write_latest_dashboard(outdir_path, last_action="pass", ui_state={"unblind": bool(ui_unblind)})
+            _write_latest_dashboard(outdir_path, last_action="pass", ui_state={"unblind": bool(ui_unblind), "nontechnical": bool(nontechnical_mode)})
             st.success("Pass sweep complete.")
+
+            # Add explanations in nontechnical mode
+            if nontechnical_mode:
+                st.markdown("### What these plots show:")
+                st.markdown("**Key rate vs elevation:** Shows how many secret bits per second are produced as the satellite passes overhead. Higher elevation = better link quality.")
+                st.markdown("**Secure window:** Shows when during the pass the link can produce secure keys (non-zero key rate).")
+                st.markdown(f"**Total secret bits produced:** {summary.get('total_secret_bits', 'N/A'):.2e} bits")
+
             st.image(elev_plot)
             st.image(secure_plot)
-            st.json(report)
+
+            if not nontechnical_mode:
+                st.json(report)
 
     with tab_experiment:
         st.subheader("Blinded Experiment")
