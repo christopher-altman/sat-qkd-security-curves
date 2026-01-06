@@ -935,7 +935,7 @@ For complete traceability, validation mapping, and invariants, see the full [Lin
 
 ## Citations
 
-If you use QVL in your research, please cite:
+If you use this work in your research, please cite:
 
 ```bibtex
 @software{sat-qkd-curves2026,
